@@ -46,12 +46,19 @@ app.use(helmet({
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 app.use(cors({
   origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      origin.endsWith('.netlify.app') ||
+      origin.endsWith('.onrender.com') ||
+      origin === 'http://localhost:3000' ||
+      origin === 'http://localhost:5173'
+    ) {
+      return callback(null, true);
+    }
     const allowed = Array.isArray(config.cors.origin)
       ? config.cors.origin
       : [config.cors.origin];
-
-    // Allow requests with no origin (mobile apps, curl, etc.)
-    if (!origin || allowed.includes(origin) || config.env === 'development') {
+    if (allowed.includes(origin) || config.env === 'development') {
       return callback(null, true);
     }
     return callback(new Error(`CORS policy: origin ${origin} not allowed`));
