@@ -1,0 +1,218 @@
+{
+  "name": "Trend Analysis Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 6 * * *" }]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Daily Cron - 6AM UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "trend-analysis",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 460]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"accepted\", \"executionId\": \"{{ $execution.id }}\" }",
+        "options": {}
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 460]
+    },
+    {
+      "parameters": {
+        "actorId": "clockworks~tiktok-scraper",
+        "input": {
+          "hashtags": ["trending", "viral", "fyp", "foryou"],
+          "resultsPerPage": 30,
+          "shouldDownloadVideos": false,
+          "shouldDownloadCovers": false,
+          "shouldDownloadSlideshowImages": false,
+          "proxyConfiguration": { "useApifyProxy": true }
+        },
+        "options": { "waitForFinish": 120 }
+      },
+      "id": "apify-tiktok",
+      "name": "Apify - TikTok Scraper",
+      "type": "n8n-nodes-base.apify",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "credentials": {
+        "apifyApi": { "id": "apify-cred", "name": "Apify API" }
+      }
+    },
+    {
+      "parameters": {
+        "actorId": "apify~instagram-hashtag-scraper",
+        "input": {
+          "hashtags": ["trending", "viral", "reels", "explorepage"],
+          "resultsLimit": 20,
+          "proxyConfiguration": { "useApifyProxy": true }
+        },
+        "options": { "waitForFinish": 120 }
+      },
+      "id": "apify-instagram",
+      "name": "Apify - Instagram Scraper",
+      "type": "n8n-nodes-base.apify",
+      "typeVersion": 1,
+      "position": [460, 460],
+      "credentials": {
+        "apifyApi": { "id": "apify-cred", "name": "Apify API" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge TikTok and Instagram scraped data\nconst tiktokData = $input.all().filter(i => i.json.platform === 'tiktok').map(i => i.json);\nconst instagramData = $input.all().filter(i => i.json.platform === 'instagram').map(i => i.json);\n\nconst tiktokItems = $node['Apify - TikTok Scraper']?.json?.items || [];\nconst instagramItems = $node['Apify - Instagram Scraper']?.json?.items || [];\n\n// Extract hashtags from TikTok\nconst tiktokHashtags = {};\nfor (const item of tiktokItems) {\n  if (item.hashtags) {\n    for (const tag of item.hashtags) {\n      const tagName = tag.name || tag;\n      tiktokHashtags[tagName] = (tiktokHashtags[tagName] || 0) + 1;\n    }\n  }\n}\n\n// Sort by frequency\nconst sortedTiktokTags = Object.entries(tiktokHashtags)\n  .sort((a, b) => b[1] - a[1])\n  .slice(0, 20)\n  .map(([tag, count]) => ({ tag: `#${tag}`, count, platform: 'tiktok' }));\n\n// Extract sounds from TikTok\nconst tiktokSounds = {};\nfor (const item of tiktokItems) {\n  if (item.music?.title) {\n    const soundKey = item.music.title;\n    tiktokSounds[soundKey] = {\n      name: item.music.title,\n      author: item.music.authorName,\n      count: (tiktokSounds[soundKey]?.count || 0) + 1\n    };\n  }\n}\n\nconst sortedSounds = Object.values(tiktokSounds)\n  .sort((a, b) => b.count - a.count)\n  .slice(0, 10);\n\nreturn [{\n  json: {\n    tiktokData: { hashtags: sortedTiktokTags, sounds: sortedSounds, rawItems: tiktokItems.slice(0, 10) },\n    instagramData: { rawItems: instagramItems.slice(0, 10) },\n    timestamp: new Date().toISOString(),\n    niche: $json.body?.niche || null,\n    tenantId: $json.body?.tenantId || null\n  }\n}];"
+      },
+      "id": "merge-data",
+      "name": "Merge & Process Scraped Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 380]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "model": "gpt-4-turbo-preview",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a viral marketing trend analyst. Analyze social media trend data and provide actionable insights for advertisers. Return valid JSON only."
+            },
+            {
+              "role": "user",
+              "content": "=Analyze these trending patterns from TikTok and Instagram{{ $json.niche ? ' for the ' + $json.niche + ' industry' : '' }}:\n\nTikTok trending hashtags: {{ JSON.stringify($json.tiktokData.hashtags, null, 2) }}\n\nTrending sounds: {{ JSON.stringify($json.tiktokData.sounds, null, 2) }}\n\nBased on this data, provide a comprehensive trend report. Return JSON:\n{\n  \"summary\": \"executive summary of trends\",\n  \"opportunityScore\": 75,\n  \"trendingHashtags\": [{ \"tag\": \"#example\", \"platform\": \"tiktok\", \"volume\": \"2.1M\", \"growth\": \"+45%\", \"relevance\": 85, \"bestUseCase\": \"use for...\" }],\n  \"trendingSounds\": [{ \"name\": \"...\", \"platform\": \"tiktok\", \"usageCount\": \"500K videos\", \"mood\": \"energetic\", \"bestFor\": \"product category\" }],\n  \"trendingFormats\": [{ \"format\": \"POV Videos\", \"description\": \"...\", \"avgEngagementBoost\": \"+65%\", \"difficulty\": \"easy\", \"example\": \"...\" }],\n  \"viralHooks\": [{ \"hook\": \"POV: You just discovered...\", \"pattern\": \"POV Hook\", \"avgRetentionBoost\": \"+40%\", \"platform\": \"tiktok\" }],\n  \"recommendations\": [{ \"priority\": 1, \"title\": \"...\", \"action\": \"...\", \"expectedImpact\": \"...\", \"timeToImplement\": \"2 days\", \"effort\": \"low\" }],\n  \"avoidList\": [\"oversaturated trend 1\"]\n}"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 3000,
+          "temperature": 0.5,
+          "responseFormat": "json_object"
+        }
+      },
+      "id": "gpt4-analysis",
+      "name": "GPT-4 Trend Analysis",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [900, 380],
+      "credentials": {
+        "openAiApi": { "id": "openai-cred", "name": "OpenAI API" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const analysis = JSON.parse($input.first().json.message.content);\nconst rawData = $node['Merge & Process Scraped Data'].json;\n\nreturn [{\n  json: {\n    analysis,\n    rawData,\n    tenantId: rawData.tenantId,\n    niche: rawData.niche,\n    timestamp: rawData.timestamp\n  }\n}];"
+      },
+      "id": "prepare-report",
+      "name": "Prepare Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=={{ $vars.BACKEND_URL }}/api/trends/ingest",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"tenantId\": \"{{ $json.tenantId }}\",\n  \"platform\": \"tiktok\",\n  \"niche\": \"{{ $json.niche }}\",\n  \"analysis\": {{ JSON.stringify($json.analysis) }},\n  \"rawData\": {{ JSON.stringify($json.rawData) }}\n}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "store-report",
+      "name": "Store in Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=={{ $vars.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": { \"type\": \"plain_text\", \"text\": \":chart_with_upwards_trend: Daily Trend Report Ready\" }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Summary:*\\n{{ $json.analysis.summary }}\\n\\n*Opportunity Score:* {{ $json.analysis.opportunityScore }}/100\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Top Hashtags:*\\n{{ $json.analysis.trendingHashtags?.slice(0, 5).map(h => h.tag + ' ' + h.growth).join('\\\\n') }}\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Top Recommendation:*\\n{{ $json.analysis.recommendations?.[0]?.action }}\"\n      }\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "slack-report",
+      "name": "Slack - Send Trend Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1560, 380]
+    }
+  ],
+  "connections": {
+    "Daily Cron - 6AM UTC": {
+      "main": [
+        [
+          { "node": "Apify - TikTok Scraper", "type": "main", "index": 0 },
+          { "node": "Apify - Instagram Scraper", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
+      "main": [
+        [
+          { "node": "Respond OK", "type": "main", "index": 0 },
+          { "node": "Apify - TikTok Scraper", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Apify - TikTok Scraper": {
+      "main": [
+        [{ "node": "Merge & Process Scraped Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Apify - Instagram Scraper": {
+      "main": [
+        [{ "node": "Merge & Process Scraped Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Merge & Process Scraped Data": {
+      "main": [
+        [{ "node": "GPT-4 Trend Analysis", "type": "main", "index": 0 }]
+      ]
+    },
+    "GPT-4 Trend Analysis": {
+      "main": [
+        [{ "node": "Prepare Report", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Report": {
+      "main": [
+        [{ "node": "Store in Backend", "type": "main", "index": 0 }]
+      ]
+    },
+    "Store in Backend": {
+      "main": [
+        [{ "node": "Slack - Send Trend Report", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": ["trends", "analytics", "ai"],
+  "versionId": "1"
+}

@@ -1,0 +1,241 @@
+{
+  "name": "Ad Copy Generator Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ad-copy",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Brand Brief",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"processing\", \"executionId\": \"{{ $execution.id }}\", \"message\": \"Ad copy generation started\" }",
+        "options": {}
+      },
+      "id": "respond-accepted",
+      "name": "Respond Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 180]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate and prepare the brief\nconst body = $json.body || $json;\nconst required = ['brandName', 'productDescription'];\nconst missing = required.filter(f => !body[f]);\n\nif (missing.length > 0) {\n  throw new Error(`Missing required fields: ${missing.join(', ')}`);\n}\n\nconst platforms = body.platforms || ['meta', 'google', 'tiktok'];\nconst items = platforms.map(platform => ({\n  json: {\n    ...body,\n    platform,\n    variantsPerPlatform: body.variants || 3\n  }\n}));\n\nreturn items;"
+      },
+      "id": "prepare-brief",
+      "name": "Validate & Split by Platform",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 380]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "model": "gpt-4-turbo-preview",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an expert performance marketer and copywriter specializing in {{ $json.platform }} advertising. Write high-converting ad copy that drives measurable results. Return JSON only."
+            },
+            {
+              "role": "user",
+              "content": "=Generate {{ $json.variantsPerPlatform }} {{ $json.platform }} ad copy variants for:\n\nBrand: {{ $json.brandName }}\nProduct/Service: {{ $json.productDescription }}\nTarget Audience: {{ $json.targetAudience || 'general consumers' }}\nTone: {{ $json.tone || 'persuasive' }}\nUnique Selling Points: {{ $json.usps ? $json.usps.join(', ') : 'not specified' }}\n\nPlatform specs:\n{{ $json.platform === 'meta' ? 'Facebook/Instagram: headline max 40 chars, primary text max 125 chars, description 30 chars' : '' }}\n{{ $json.platform === 'google' ? 'Google Ads: headline max 30 chars (3 headlines), description max 90 chars (2 descriptions)' : '' }}\n{{ $json.platform === 'tiktok' ? 'TikTok: hook first 3 seconds critical, energetic language, trending phrases, 15-30 second read time' : '' }}\n\nReturn JSON:\n{\n  \"platform\": \"{{ $json.platform }}\",\n  \"variants\": [\n    {\n      \"variant\": 1,\n      \"angle\": \"unique selling angle\",\n      \"headline\": \"...\",\n      \"primaryText\": \"...\",\n      \"description\": \"...\",\n      \"callToAction\": \"...\",\n      \"hook\": \"first 3-second hook\",\n      \"predictedCTR\": \"estimated CTR range\",\n      \"targetEmotion\": \"primary emotion targeted\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 2000,
+          "temperature": 0.8,
+          "responseFormat": "json_object"
+        }
+      },
+      "id": "openai-copy",
+      "name": "GPT-4 - Generate Ad Copy",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [680, 380],
+      "credentials": {
+        "openAiApi": { "id": "openai-cred", "name": "OpenAI API" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all platform variants into a single result\nconst allVariants = $input.all().map(item => {\n  try {\n    const parsed = JSON.parse(item.json.message.content);\n    return { platform: parsed.platform, variants: parsed.variants || [] };\n  } catch {\n    return { platform: 'unknown', variants: [] };\n  }\n});\n\nreturn [{ json: { allVariants, generationId: $node['Validate & Split by Platform']?.json?.generationId, brandName: $node['Validate & Split by Platform']?.json?.brandName } }];"
+      },
+      "id": "aggregate-variants",
+      "name": "Aggregate All Variants",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=={{ $vars.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": { \"type\": \"plain_text\", \"text\": \":writing_hand: New Ad Copy Ready for Review\" }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Brand:* {{ $json.brandName }}\\n*Platforms:* {{ $json.allVariants.map(v => v.platform).join(', ') }}\\n*Total Variants:* {{ $json.allVariants.reduce((sum, p) => sum + p.variants.length, 0) }}\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Sample - Meta Hook:*\\n{{ $json.allVariants.find(v => v.platform === 'meta')?.variants?.[0]?.hook || 'N/A' }}\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Sample - TikTok Hook:*\\n{{ $json.allVariants.find(v => v.platform === 'tiktok')?.variants?.[0]?.hook || 'N/A' }}\"\n      }\n    },\n    {\n      \"type\": \"actions\",\n      \"elements\": [\n        {\n          \"type\": \"button\",\n          \"text\": { \"type\": \"plain_text\", \"text\": \":white_check_mark: Approve & Publish\" },\n          \"style\": \"primary\",\n          \"value\": \"{{ JSON.stringify({ action: 'approve', generationId: $json.generationId }) }}\"\n        },\n        {\n          \"type\": \"button\",\n          \"text\": { \"type\": \"plain_text\", \"text\": \":x: Reject\" },\n          \"style\": \"danger\",\n          \"value\": \"{{ JSON.stringify({ action: 'reject', generationId: $json.generationId }) }}\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "slack-approval",
+      "name": "Slack - Request Approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 380]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ad-copy-approval",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "slack-action-webhook",
+      "name": "Slack Action - Approval Response",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = JSON.parse($json.body?.payload || '{}');\nconst action = payload.actions?.[0];\nconst actionValue = JSON.parse(action?.value || '{}');\n\nreturn [{\n  json: {\n    approved: actionValue.action === 'approve',\n    generationId: actionValue.generationId,\n    userId: payload.user?.id,\n    channelId: payload.channel?.id\n  }\n}];"
+      },
+      "id": "parse-approval",
+      "name": "Parse Approval Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.approved }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ]
+        }
+      },
+      "id": "check-approved",
+      "name": "Is Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v19.0/act_{{ $vars.META_AD_ACCOUNT_ID }}/ads",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"name\": \"AI Generated Ad - {{ $now.toISO() }}\",\n  \"adset_id\": \"{{ $vars.META_DEFAULT_ADSET_ID }}\",\n  \"creative\": {\n    \"title\": \"{{ $json.variants?.[0]?.headline }}\",\n    \"body\": \"{{ $json.variants?.[0]?.primaryText }}\",\n    \"call_to_action\": { \"type\": \"LEARN_MORE\" }\n  },\n  \"status\": \"PAUSED\",\n  \"access_token\": \"{{ $vars.META_ACCESS_TOKEN }}\"\n}",
+        "options": {}
+      },
+      "id": "meta-create-ad",
+      "name": "Meta - Create Ad (Paused)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=={{ $vars.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"text\": \":white_check_mark: Ad copy approved and created in Meta Ads (paused pending review). Generation ID: {{ $json.generationId }}\" }",
+        "options": {}
+      },
+      "id": "slack-confirmed",
+      "name": "Slack - Confirmed Created",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2220, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=={{ $vars.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"text\": \":x: Ad copy rejected by {{ $json.userId }}. Generation ID: {{ $json.generationId }}\" }",
+        "options": {}
+      },
+      "id": "slack-rejected",
+      "name": "Slack - Rejected",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 420]
+    }
+  ],
+  "connections": {
+    "Webhook - Brand Brief": {
+      "main": [
+        [
+          { "node": "Respond Accepted", "type": "main", "index": 0 },
+          { "node": "Validate & Split by Platform", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Validate & Split by Platform": {
+      "main": [
+        [{ "node": "GPT-4 - Generate Ad Copy", "type": "main", "index": 0 }]
+      ]
+    },
+    "GPT-4 - Generate Ad Copy": {
+      "main": [
+        [{ "node": "Aggregate All Variants", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate All Variants": {
+      "main": [
+        [{ "node": "Slack - Request Approval", "type": "main", "index": 0 }]
+      ]
+    },
+    "Slack Action - Approval Response": {
+      "main": [
+        [{ "node": "Parse Approval Decision", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Approval Decision": {
+      "main": [
+        [{ "node": "Is Approved?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is Approved?": {
+      "main": [
+        [{ "node": "Meta - Create Ad (Paused)", "type": "main", "index": 0 }],
+        [{ "node": "Slack - Rejected", "type": "main", "index": 0 }]
+      ]
+    },
+    "Meta - Create Ad (Paused)": {
+      "main": [
+        [{ "node": "Slack - Confirmed Created", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": ["ads", "ai", "copywriting", "meta"],
+  "versionId": "1"
+}
