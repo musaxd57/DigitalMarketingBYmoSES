@@ -1,0 +1,295 @@
+{
+  "name": "Video Production Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "video-pipeline",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ executionId: $execution.id, status: 'accepted', message: 'Video pipeline started' }) }}",
+        "options": {}
+      },
+      "id": "respond-accepted",
+      "name": "Respond Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 180]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "model": "gpt-4-turbo-preview",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a world-class video ad scriptwriter. Write compelling short-form video scripts optimized for the specified platform. Return JSON only."
+            },
+            {
+              "role": "user",
+              "content": "=Write a {{ $json.body.video.duration }}-second {{ $json.body.video.style }} video ad script for {{ $json.body.brand.name }}.\n\nProduct: {{ $json.body.brand.productDescription }}\nTarget Audience: {{ $json.body.brand.targetAudience }}\nPlatform: {{ $json.body.video.platform }}\n{{ $json.body.script.direction ? 'Direction: ' + $json.body.script.direction : '' }}\n\nReturn JSON:\n{\n  \"hook\": \"attention-grabbing opening line (first 3 seconds)\",\n  \"scenes\": [\n    { \"timestamp\": \"0-3s\", \"visual\": \"...\", \"voiceover\": \"...\", \"text_overlay\": \"...\" }\n  ],\n  \"cta\": \"call to action\",\n  \"full_voiceover_script\": \"complete script for voiceover\",\n  \"image_prompts\": [\"detailed image generation prompt 1\", \"prompt 2\", \"prompt 3\"]\n}"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 2000,
+          "temperature": 0.7,
+          "responseFormat": "json_object"
+        }
+      },
+      "id": "openai-script",
+      "name": "GPT-4 Script Writer",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [460, 380],
+      "credentials": {
+        "openAiApi": { "id": "openai-cred", "name": "OpenAI API" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const scriptData = JSON.parse($input.first().json.message.content);\nconst imagePrompts = scriptData.image_prompts || [];\nconst items = imagePrompts.map((prompt, idx) => ({\n  json: {\n    prompt: prompt + ', ultra realistic, cinematic lighting, 4K, professional photography',\n    index: idx,\n    script: scriptData,\n    generationId: $input.first().json.body?.generationId,\n    tenantId: $input.first().json.body?.tenantId\n  }\n}));\nreturn items.length > 0 ? items : [{ json: { error: 'No image prompts generated', script: scriptData } }];"
+      },
+      "id": "parse-script",
+      "name": "Parse Script & Split Prompts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.piapi.ai/api/flux/generate",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "prompt", "value": "={{ $json.prompt }}" },
+            { "name": "model", "value": "flux-dev" },
+            { "name": "width", "value": "={{ $json.script?.video?.aspectRatio === '9:16' ? 1080 : 1920 }}" },
+            { "name": "height", "value": "={{ $json.script?.video?.aspectRatio === '9:16' ? 1920 : 1080 }}" },
+            { "name": "num_inference_steps", "value": 28 },
+            { "name": "guidance_scale", "value": 3.5 }
+          ]
+        },
+        "options": { "timeout": 120000 }
+      },
+      "id": "piapi-flux-images",
+      "name": "PiAPI Flux - Generate Images",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 380],
+      "credentials": {
+        "httpHeaderAuth": { "id": "piapi-cred", "name": "PiAPI Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect all generated images and pair with script scenes\nconst allImages = $input.all();\nconst firstItem = allImages[0]?.json;\nconst script = firstItem?.script || {};\nconst imageUrls = allImages.map(item => item.json?.data?.images?.[0]?.url || item.json?.image_url).filter(Boolean);\n\nreturn [{\n  json: {\n    images: imageUrls,\n    script,\n    generationId: firstItem?.generationId,\n    tenantId: firstItem?.tenantId,\n    videoConfig: {\n      fps: 24,\n      duration: script?.video?.duration || 30,\n      aspectRatio: script?.video?.aspectRatio || '9:16'\n    }\n  }\n}];"
+      },
+      "id": "aggregate-images",
+      "name": "Aggregate Images",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.piapi.ai/api/kling/video",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "image_url", "value": "={{ $json.images[0] }}" },
+            { "name": "prompt", "value": "={{ $json.script?.hook || 'Dynamic product showcase' }}, cinematic motion, smooth camera movement" },
+            { "name": "duration", "value": "={{ Math.min($json.videoConfig.duration, 10) }}" },
+            { "name": "aspect_ratio", "value": "={{ $json.videoConfig.aspectRatio }}" },
+            { "name": "mode", "value": "pro" }
+          ]
+        },
+        "options": { "timeout": 300000 }
+      },
+      "id": "piapi-kling-video",
+      "name": "PiAPI Kling - Image to Video",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 380],
+      "credentials": {
+        "httpHeaderAuth": { "id": "piapi-cred", "name": "PiAPI Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.elevenlabs.io/v1/text-to-speech/{{ $json.voiceId || '21m00Tcm4TlvDq8ikWAM' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "xi-api-key", "value": "={{ $vars.ELEVENLABS_API_KEY }}" },
+            { "name": "Accept", "value": "audio/mpeg" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "text", "value": "={{ $json.script?.full_voiceover_script || $json.script?.hook }}" },
+            { "name": "model_id", "value": "eleven_multilingual_v2" },
+            {
+              "name": "voice_settings",
+              "value": "={ \"stability\": 0.5, \"similarity_boost\": 0.75, \"style\": 0.2, \"use_speaker_boost\": true }"
+            }
+          ]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "arraybuffer" } },
+          "timeout": 60000
+        }
+      },
+      "id": "elevenlabs-voiceover",
+      "name": "ElevenLabs - Voiceover",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1560, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.creatomate.com/v1/renders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $vars.CREATOMATE_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"template_id\": \"{{ $vars.CREATOMATE_VIDEO_TEMPLATE_ID }}\",\n  \"modifications\": {\n    \"Video-Clip\": {\n      \"source\": \"{{ $json.videoUrl }}\"\n    },\n    \"Voiceover\": {\n      \"source\": \"data:audio/mpeg;base64,{{ Buffer.from($json.audioBuffer).toString('base64') }}\"\n    },\n    \"Hook-Text\": {\n      \"text\": \"{{ $json.script.hook }}\"\n    },\n    \"CTA-Text\": {\n      \"text\": \"{{ $json.script.cta }}\"\n    }\n  },\n  \"output_format\": \"mp4\"\n}",
+        "options": { "timeout": 300000 }
+      },
+      "id": "creatomate-render",
+      "name": "Creatomate - Final Render",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1780, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=={{ $vars.BACKEND_URL }}/api/webhooks/video-complete",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"generationId\": \"{{ $json.generationId }}\",\n  \"status\": \"completed\",\n  \"videoUrl\": \"{{ $json.renders?.[0]?.url || $json.url }}\",\n  \"thumbnailUrl\": \"{{ $json.renders?.[0]?.snapshot_url || '' }}\",\n  \"metadata\": {\n    \"duration\": {{ $json.videoConfig?.duration }},\n    \"platform\": \"{{ $json.script?.video?.platform }}\",\n    \"renderEngine\": \"creatomate\"\n  }\n}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-backend",
+      "name": "Notify Backend - Complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=={{ $vars.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \":movie_camera: *New AI Video Ready!*\",\n  \"attachments\": [\n    {\n      \"color\": \"#00ff88\",\n      \"fields\": [\n        { \"title\": \"Generation ID\", \"value\": \"{{ $json.body.generationId }}\", \"short\": true },\n        { \"title\": \"Platform\", \"value\": \"{{ $json.body.video?.platform }}\", \"short\": true },\n        { \"title\": \"Style\", \"value\": \"{{ $json.body.video?.style }}\", \"short\": true }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "slack-notify",
+      "name": "Slack Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=={{ $vars.BACKEND_URL }}/api/webhooks/video-complete",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"generationId\": \"{{ $json.body?.generationId }}\",\n  \"status\": \"failed\",\n  \"error\": \"{{ $json.message || 'Pipeline error' }}\"\n}",
+        "options": {}
+      },
+      "id": "notify-error",
+      "name": "Notify Backend - Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 600]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          { "node": "Respond Accepted", "type": "main", "index": 0 },
+          { "node": "GPT-4 Script Writer", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "GPT-4 Script Writer": {
+      "main": [
+        [{ "node": "Parse Script & Split Prompts", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Script & Split Prompts": {
+      "main": [
+        [{ "node": "PiAPI Flux - Generate Images", "type": "main", "index": 0 }]
+      ]
+    },
+    "PiAPI Flux - Generate Images": {
+      "main": [
+        [{ "node": "Aggregate Images", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate Images": {
+      "main": [
+        [{ "node": "PiAPI Kling - Image to Video", "type": "main", "index": 0 }]
+      ]
+    },
+    "PiAPI Kling - Image to Video": {
+      "main": [
+        [{ "node": "ElevenLabs - Voiceover", "type": "main", "index": 0 }]
+      ]
+    },
+    "ElevenLabs - Voiceover": {
+      "main": [
+        [{ "node": "Creatomate - Final Render", "type": "main", "index": 0 }]
+      ]
+    },
+    "Creatomate - Final Render": {
+      "main": [
+        [{ "node": "Notify Backend - Complete", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notify Backend - Complete": {
+      "main": [
+        [{ "node": "Slack Notification", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": ["video", "ai", "marketing"],
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "versionId": "1"
+}
