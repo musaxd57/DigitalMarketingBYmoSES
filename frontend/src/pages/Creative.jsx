@@ -29,7 +29,7 @@ export default function Creative() {
   const copyPollRef = useRef(null);
 
   // Voiceover state
-  const [voiceForm, setVoiceForm] = useState({ text: '', voiceId: '21m00Tcm4TlvDq8ikWAM' });
+  const [voiceForm, setVoiceForm] = useState({ text: '', voiceId: '21m00Tcm4TlvDq8ikWAM', modelId: 'eleven_turbo_v2_5' });
   const [generatingVoice, setGeneratingVoice] = useState(false);
   const [audioResult, setAudioResult] = useState(null);
   const voicePollRef = useRef(null);
@@ -470,15 +470,24 @@ export default function Creative() {
               <p className="text-[#333] text-xs mt-1">{voiceForm.text.length}/5000</p>
             </div>
             <div>
-              <label className={labelClass}>Voice</label>
+              <label className={labelClass}>Ses / Voice</label>
               <select className={inputClass} value={voiceForm.voiceId}
                 onChange={(e) => setVoiceForm((f) => ({ ...f, voiceId: e.target.value }))}>
-                <option value="21m00Tcm4TlvDq8ikWAM">Rachel (Female, American)</option>
-                <option value="AZnzlk1XvdvUeBnXmlld">Domi (Female, American)</option>
-                <option value="EXAVITQu4vr4xnSDxMaL">Bella (Female, American)</option>
-                <option value="ErXwobaYiN019PkySvjV">Antoni (Male, American)</option>
-                <option value="VR6AewLTigWG4xSOukaG">Arnold (Male, American)</option>
-                <option value="pNInz6obpgDQGcFmaJgB">Adam (Male, American)</option>
+                <option value="21m00Tcm4TlvDq8ikWAM">Rachel (Kadın, Amerikan)</option>
+                <option value="AZnzlk1XvdvUeBnXmlld">Domi (Kadın, Amerikan)</option>
+                <option value="EXAVITQu4vr4xnSDxMaL">Bella (Kadın, Amerikan)</option>
+                <option value="ErXwobaYiN019PkySvjV">Antoni (Erkek, Amerikan)</option>
+                <option value="VR6AewLTigWG4xSOukaG">Arnold (Erkek, Amerikan)</option>
+                <option value="pNInz6obpgDQGcFmaJgB">Adam (Erkek, Amerikan)</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Model</label>
+              <select className={inputClass} value={voiceForm.modelId}
+                onChange={(e) => setVoiceForm((f) => ({ ...f, modelId: e.target.value }))}>
+                <option value="eleven_turbo_v2_5">Turbo v2.5 (Ücretsiz plan)</option>
+                <option value="eleven_flash_v2_5">Flash v2.5 (En hızlı, Ücretsiz)</option>
+                <option value="eleven_multilingual_v2">Multilingual v2 (Ücretli plan gerekli)</option>
               </select>
             </div>
             <button
