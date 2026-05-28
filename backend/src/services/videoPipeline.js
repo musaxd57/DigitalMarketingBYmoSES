@@ -13,29 +13,55 @@ class VideoPipeline {
     const { brandName, productDescription, videoStyle, platform, duration, tenantId } = brief;
 
     if (!this.runwayKey) {
-      throw new Error('RUNWAY_API_KEY is not configured. Please add it to your environment variables.');
+      throw new Error('RUNWAY_API_KEY is not configured.');
     }
 
     try {
-      // ── Step 1: Generate prompts via GPT-4o ───────────────────────────────────
-      const aspectRatio = (platform === 'youtube') ? '16:9' : '9:16';
-      const styleMap = {
-        ugc: 'authentic user-generated content, natural daylight, handheld camera, real person feel',
-        testimonial: 'clean talking-head interview, soft bokeh background, warm professional lighting',
-        educational: 'bright clean modern aesthetic, crisp text overlays, informative and engaging',
-        entertainment: 'dynamic fast cuts, vibrant saturated colors, trendy Gen-Z social aesthetic',
-        product_demo: 'premium product showcase, studio lighting, dramatic shadows, Apple-style minimalism',
-      };
-      const styleDesc = styleMap[videoStyle] || styleMap.ugc;
-
-      // DALL-E 3 size must match aspect ratio
-      const dalleSize = aspectRatio === '9:16' ? '1024x1792' : '1792x1024';
+      const aspectRatio = platform === 'youtube' ? '16:9' : '9:16';
       const runwayRatio = aspectRatio === '9:16' ? '720:1280' : '1280:720';
+      const dalleSize = aspectRatio === '9:16' ? '1024x1792' : '1792x1024';
+      const videoDuration = [5, 10].includes(duration) ? duration : 5;
 
-      console.log('[VideoPipeline] Step 1: GPT-4o prompt generation...');
+      const styleGuide = {
+        ugc: {
+          visual: 'authentic lifestyle photography, natural window light, real environment, candid feel, shallow depth of field, shot on iPhone pro',
+          motion: 'handheld subtle camera shake, slow drift push-in, natural organic movement',
+          negative: 'studio, artificial, staged, stock photo look',
+        },
+        testimonial: {
+          visual: 'clean portrait photography, soft diffused backlight, professional bokeh background, warm color grade, interview style',
+          motion: 'slow gentle zoom-in, slight rack focus, breathing camera movement',
+          negative: 'chaotic, dark, low quality, blurry',
+        },
+        educational: {
+          visual: 'bright clean modern product shot, white or gradient background, crisp sharp focus, flat lay or 3/4 angle, professional lighting',
+          motion: 'smooth slow orbit around product, gentle elevation change, reveal motion',
+          negative: 'dark, cluttered, noisy, people',
+        },
+        entertainment: {
+          visual: 'vibrant high-contrast commercial photography, dynamic angle, trendy aesthetic, Gen-Z color palette, bold composition',
+          motion: 'dynamic fast push-in, energetic camera movement, parallax effect',
+          negative: 'boring, static, dull, corporate',
+        },
+        product_demo: {
+          visual: 'premium luxury product photography, dramatic studio lighting, dark or gradient background, sharp focus, specular highlights, Apple-style minimalism, hyperrealistic',
+          motion: 'ultra-slow cinematic dolly push, dramatic reveal from shadow, 3D rotation effect',
+          negative: 'cheap, cluttered, busy background, amateur',
+        },
+      };
+
+      const style = styleGuide[videoStyle] || styleGuide.ugc;
+      const platformContext = platform === 'tiktok' ? 'vertical TikTok ad, Gen-Z audience'
+        : platform === 'instagram' ? 'Instagram Reels ad, lifestyle audience'
+        : platform === 'youtube' ? 'YouTube pre-roll ad, wide audience'
+        : 'social media video ad';
+
+      // ── Step 1: GPT-4o Premium Prompt Generation ─────────────────────────────
+      console.log('[VideoPipeline] Step 1: GPT-4o premium prompt generation...');
+
       let prompts = {
-        imagePrompt: `${brandName} ${productDescription}, professional product photography, ${styleDesc}`,
-        motionPrompt: `${styleDesc}, smooth cinematic camera movement, professional ad`,
+        imagePrompt: `${productDescription} product, ${style.visual}, professional commercial photography, 8K resolution`,
+        motionPrompt: style.motion,
         headline: brandName,
       };
 
@@ -47,84 +73,103 @@ class VideoPipeline {
             messages: [
               {
                 role: 'system',
-                content: `You are a world-class advertising creative director. Generate precise, vivid prompts for AI video generation. Always write imagePrompt and motionPrompt in ENGLISH regardless of input language. Respond ONLY with valid JSON, no markdown.`,
+                content: `You are a senior creative director at a top-tier advertising agency (think Wieden+Kennedy, BBDO). You craft world-class video ad prompts for AI generation tools. You write all image and motion prompts in ENGLISH regardless of input language. Your prompts are specific, vivid, and technically precise.`,
               },
               {
                 role: 'user',
-                content: `Create prompts for a ${platform} video ad.
+                content: `Create premium AI video ad prompts for:
 Brand: ${brandName}
 Product: ${productDescription}
-Style: ${styleDesc}
+Platform: ${platformContext}
+Visual Style: ${style.visual}
+Motion Style: ${style.motion}
 
-Return JSON with exactly these keys:
+Return ONLY valid JSON with these exact keys:
 {
-  "imagePrompt": "ENGLISH ONLY - highly detailed DALL-E prompt describing the product visually: exact colors, materials, textures, lighting, setting. Must clearly depict the actual product. Example: 'A beige linen shirt hanging on a wooden hanger, soft natural light, minimal white background, premium quality fabric texture visible'",
-  "motionPrompt": "ENGLISH ONLY - Runway ML camera motion: slow push-in, gentle rotation, subtle zoom. Cinematic and smooth. Max 2 sentences.",
-  "headline": "Short punchy ad headline in the same language as the product description (max 6 words)"
+  "imagePrompt": "ENGLISH ONLY. Photorealistic DALL-E 3 prompt. Describe: (1) the exact product with precise colors/materials/textures, (2) lighting setup, (3) background/setting, (4) camera angle, (5) mood/atmosphere. Include terms like: 'shot on Phase One camera', 'commercial advertising photography', specific color names, material descriptors. Min 60 words.",
+  "motionPrompt": "ENGLISH ONLY. Runway Gen-4 cinematic motion prompt. Describe camera movement precisely: direction, speed, focal shift. Reference film techniques. Max 3 sentences. Example: 'Ultra-smooth slow dolly push-in toward the product, subtle rack focus from background to foreground, gentle lens breathing effect creating a premium cinematic feel.'",
+  "negativePrompt": "ENGLISH ONLY. Elements to avoid in the video. List unwanted qualities: blurry, amateur, stock photo, watermark, text overlays, distorted, low quality.",
+  "headline": "Punchy ad headline in the language of the product description. Max 6 words. No punctuation."
 }`,
               },
             ],
-            max_tokens: 400,
-            temperature: 0.7,
+            max_tokens: 600,
+            temperature: 0.8,
           },
           {
             headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
             timeout: 30000,
           }
         );
+
         const raw = promptRes.data.choices[0].message.content.trim();
         const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         const parsed = JSON.parse(jsonStr);
         prompts = { ...prompts, ...parsed };
       } catch (gptErr) {
-        console.warn('[VideoPipeline] GPT prompt generation failed, using defaults:', gptErr.message);
+        console.warn('[VideoPipeline] GPT-4o failed, using defaults:', gptErr.message);
       }
-      console.log('[VideoPipeline] Step 1 done. Image prompt:', prompts.imagePrompt);
 
-      // ── Step 2: Generate image with DALL-E 3 HD ───────────────────────────────
-      console.log('[VideoPipeline] Step 2: Generating DALL-E 3 HD image...');
+      console.log('[VideoPipeline] Step 1 done.');
+      console.log('[VideoPipeline] imagePrompt:', prompts.imagePrompt);
+      console.log('[VideoPipeline] motionPrompt:', prompts.motionPrompt);
+
+      // ── Step 2: DALL-E 3 HD Starting Frame ───────────────────────────────────
+      console.log('[VideoPipeline] Step 2: DALL-E 3 HD image generation...');
       let promptImage;
+
       try {
+        const enhancedImagePrompt = `${prompts.imagePrompt}. Commercial advertising photography, ultra-high resolution, sharp focus throughout, professional color grading, no text, no watermarks, no people unless specified, photorealistic.`;
+
         const dalleRes = await axios.post(
           'https://api.openai.com/v1/images/generations',
           {
             model: 'dall-e-3',
-            prompt: `${prompts.imagePrompt}. Ultra high quality advertising photograph, sharp focus, professional studio lighting, 8K resolution.`,
+            prompt: enhancedImagePrompt,
             n: 1,
             size: dalleSize,
             quality: 'hd',
           },
           {
             headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
-            timeout: 90000,
+            timeout: 120000,
           }
         );
         promptImage = dalleRes.data.data[0].url;
-        console.log('[VideoPipeline] Step 2 done. DALL-E HD image obtained.');
+        console.log('[VideoPipeline] Step 2 done. DALL-E 3 HD image generated.');
       } catch (dalleErr) {
-        console.warn('[VideoPipeline] DALL-E failed, using placeholder:', dalleErr.response?.data?.error?.message || dalleErr.message);
-        const seed = Math.floor(Math.random() * 1000);
+        console.warn('[VideoPipeline] DALL-E 3 failed:', dalleErr.response?.data?.error?.message || dalleErr.message);
+        const seed = Math.floor(Math.random() * 9999);
         const [pw, ph] = dalleSize.split('x').map(Number);
         const imgRes = await axios.get(
           `https://picsum.photos/seed/${seed}/${pw}/${ph}`,
           { responseType: 'arraybuffer', timeout: 15000 }
         );
         promptImage = `data:image/jpeg;base64,${Buffer.from(imgRes.data).toString('base64')}`;
+        console.log('[VideoPipeline] Using placeholder image as fallback.');
       }
 
-      // ── Step 3: Runway ML Gen-3 Alpha image-to-video ─────────────────────────
-      console.log('[VideoPipeline] Step 3: Sending to Runway ML Gen-3 Alpha...');
+      // ── Step 3: Runway Gen-4 Turbo Image-to-Video ────────────────────────────
+      console.log('[VideoPipeline] Step 3: Runway Gen-4 Turbo video generation...');
+      const enhancedMotionPrompt = `${prompts.motionPrompt} Photorealistic, cinematic quality, smooth professional motion, premium advertising production value, no artifacts, no flickering.`;
+
       let runwayRes;
       try {
+        const runwayPayload = {
+          model: 'gen4_turbo',
+          promptImage,
+          promptText: enhancedMotionPrompt,
+          duration: videoDuration,
+          ratio: runwayRatio,
+        };
+
+        if (prompts.negativePrompt) {
+          runwayPayload.negativePrompt = prompts.negativePrompt;
+        }
+
         runwayRes = await axios.post(
           `${this.runwayBase}/image_to_video`,
-          {
-            model: 'gen4_turbo',
-            promptImage,
-            promptText: `${prompts.motionPrompt}. Photorealistic, cinematic quality, smooth motion, professional advertisement.`,
-            duration: [5, 10].includes(duration) ? duration : 5,
-            ratio: runwayRatio,
-          },
+          runwayPayload,
           {
             headers: {
               Authorization: `Bearer ${this.runwayKey}`,
@@ -141,10 +186,11 @@ Return JSON with exactly these keys:
         console.error('[VideoPipeline] Runway error:', runwayErr.response?.status, detail);
         throw new Error(`Runway API ${runwayErr.response?.status || 'network'}: ${detail}`);
       }
-      console.log('[VideoPipeline] Step 3 done. Task ID:', runwayRes.data.id);
+      console.log('[VideoPipeline] Step 3 submitted. Task ID:', runwayRes.data.id);
 
-      // ── Step 4: Poll Runway task until done ───────────────────────────────────
+      // ── Step 4: Poll until complete ───────────────────────────────────────────
       const videoUrl = await this._pollRunwayTask(runwayRes.data.id);
+      console.log('[VideoPipeline] Pipeline complete. Video URL:', videoUrl);
 
       if (tenantId) {
         pool.query(
@@ -169,15 +215,22 @@ Return JSON with exactly these keys:
     while (Date.now() - start < maxWaitMs) {
       await new Promise((r) => setTimeout(r, interval));
 
-      const res = await axios.get(`${this.runwayBase}/tasks/${taskId}`, {
-        headers: {
-          Authorization: `Bearer ${this.runwayKey}`,
-          'X-Runway-Version': '2024-11-06',
-        },
-        timeout: 10000,
-      });
+      let res;
+      try {
+        res = await axios.get(`${this.runwayBase}/tasks/${taskId}`, {
+          headers: {
+            Authorization: `Bearer ${this.runwayKey}`,
+            'X-Runway-Version': '2024-11-06',
+          },
+          timeout: 10000,
+        });
+      } catch (pollErr) {
+        console.warn('[VideoPipeline] Poll request failed, retrying:', pollErr.message);
+        continue;
+      }
 
-      const { status, output, failure } = res.data;
+      const { status, output, failure, progress } = res.data;
+      console.log(`[VideoPipeline] Task ${taskId} status: ${status}${progress ? ` (${Math.round(progress * 100)}%)` : ''}`);
 
       if (status === 'SUCCEEDED' && output?.length > 0) {
         return output[0];
@@ -197,7 +250,6 @@ Return JSON with exactly these keys:
        WHERE id = $1 AND tenant_id = $2 AND type = 'video'`,
       [generationId, tenantId]
     );
-
     if (result.rows.length === 0) throw new Error('Generation job not found');
     return result.rows[0];
   }
