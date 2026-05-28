@@ -119,7 +119,7 @@ Return JSON with exactly these keys:
         runwayRes = await axios.post(
           `${this.runwayBase}/image_to_video`,
           {
-            model: 'gen3a',
+            model: 'gen4_turbo',
             promptImage,
             promptText: `${prompts.motionPrompt}. Photorealistic, cinematic quality, smooth motion, professional advertisement.`,
             duration: [5, 10].includes(duration) ? duration : 5,
