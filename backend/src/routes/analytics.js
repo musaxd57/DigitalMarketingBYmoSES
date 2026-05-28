@@ -46,18 +46,33 @@ router.get('/overview', authenticate, async (req, res) => {
     const result = await pool.query(query, params);
     const metrics = result.rows[0];
 
-    // Previous period for comparison
+    // Previous period for comparison — clean separate query
     const periodDays = Math.ceil((new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24));
     const prevEnd = new Date(new Date(start) - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const prevStart = new Date(new Date(start) - periodDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    const prevResult = await pool.query(query.replace('$2', '$2_prev').replace('$3', '$3_prev'),
-      [req.user.tenantId, prevStart, prevEnd, ...(platform ? [platform] : []), ...(accountId ? [accountId] : [])]
-    );
+    const prevParams = [req.user.tenantId, prevStart, prevEnd];
+    let prevQuery = `
+      SELECT
+        SUM(spend) AS total_spend,
+        SUM(conversion_value) AS total_revenue,
+        SUM(conversions) AS total_conversions,
+        SUM(clicks) AS total_clicks,
+        SUM(impressions) AS total_impressions,
+        CASE WHEN SUM(spend) > 0 THEN SUM(conversion_value) / SUM(spend) ELSE 0 END AS roas,
+        CASE WHEN SUM(impressions) > 0 THEN SUM(clicks)::decimal / SUM(impressions) ELSE 0 END AS ctr,
+        CASE WHEN SUM(conversions) > 0 THEN SUM(spend) / SUM(conversions) ELSE 0 END AS cpa
+      FROM analytics_snapshots ans
+      JOIN campaigns c ON ans.campaign_id = c.id
+      WHERE ans.tenant_id = $1
+        AND ans.snapshot_date BETWEEN $2 AND $3
+        AND ans.granularity = 'daily'
+    `;
+    let prevIdx = 4;
+    if (platform) { prevQuery += ` AND ans.platform = $${prevIdx++}`; prevParams.push(platform); }
+    if (accountId) { prevQuery += ` AND ans.ad_account_id = $${prevIdx++}`; prevParams.push(accountId); }
 
-    // Recalculate with proper placeholders
-    const prevQuery = query.split('$2')[0] + `$2 AND $3` + query.split('$3')[1];
-    const prevMetricsResult = await pool.query(prevQuery, [req.user.tenantId, prevStart, prevEnd]);
+    const prevMetricsResult = await pool.query(prevQuery, prevParams);
     const prevMetrics = prevMetricsResult.rows[0];
 
     const calcChange = (current, previous) => {
