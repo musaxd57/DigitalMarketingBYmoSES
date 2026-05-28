@@ -4,19 +4,19 @@ const { pool } = require('../models/db');
 
 /**
  * Video Production Pipeline
- * Step 1: OpenAI GPT-4o-mini → video script + image prompt + motion prompt
- * Step 2: OpenAI DALL-E 3     → starting frame image
- * Step 3: Runway ML Gen-3      → image-to-video generation
+ * Step 1: OpenAI GPT-4o-mini → motion prompt + headline
+ * Step 2: Fetch placeholder image (no DALL-E required)
+ * Step 3: Runway ML Gen-3 Turbo → image-to-video generation
  */
 class VideoPipeline {
   constructor() {
     this.openaiKey = config.openai.apiKey;
     this.runwayKey = config.runway.apiKey;
-    this.runwayBase = 'https://api.runwayml.com/v1';
+    this.runwayBase = config.runway.baseUrl || 'https://api.dev.runwayml.com/v1';
   }
 
   async runPipeline(brief) {
-    const { brandName, productDescription, targetAudience, videoStyle, platform, duration, scriptDirection, tenantId } = brief;
+    const { brandName, productDescription, videoStyle, platform, tenantId } = brief;
 
     if (!this.runwayKey) {
       throw new Error('RUNWAY_API_KEY is not configured. Please add it to your environment variables.');
@@ -35,84 +35,70 @@ class VideoPipeline {
       const styleDesc = styleMap[videoStyle] || styleMap.ugc;
 
       console.log('[VideoPipeline] Step 1: GPT-4o prompt generation...');
-      let promptRes;
+      let prompts = {
+        motionPrompt: `${styleDesc}, product showcase for ${brandName}, cinematic movement`,
+        headline: brandName,
+      };
+
       try {
-        promptRes = await axios.post(
+        const promptRes = await axios.post(
           'https://api.openai.com/v1/chat/completions',
           {
             model: 'gpt-4o-mini',
             messages: [
               { role: 'system', content: 'You are an expert video ad creative director. Respond ONLY with valid JSON.' },
-              { role: 'user', content: `Brand: ${brandName}, Product: ${productDescription}, Style: ${styleDesc}. Return JSON: {"imagePrompt":"...","motionPrompt":"...","headline":"..."}` },
+              { role: 'user', content: `Brand: ${brandName}, Product: ${productDescription}, Style: ${styleDesc}. Return JSON: {"motionPrompt":"...","headline":"..."}` },
             ],
-            max_tokens: 300,
-          temperature: 0.7,
-        },
-        {
-          headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
-          timeout: 30000,
-          }
-        );
-      } catch (gptErr) {
-        const detail = JSON.stringify(gptErr.response?.data || gptErr.message);
-        console.error('[VideoPipeline] GPT error:', gptErr.response?.status, detail);
-        throw new Error(`GPT step failed (${gptErr.response?.status}): ${detail}`);
-      }
-
-      let prompts;
-      try {
-        const raw = promptRes.data.choices[0].message.content.trim();
-        const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        prompts = JSON.parse(jsonStr);
-      } catch {
-        prompts = {
-          imagePrompt: `${brandName} product advertisement, ${styleDesc}, ${platform} ad`,
-          motionPrompt: 'slow zoom in, product comes into focus',
-          headline: brandName,
-        };
-      }
-
-      // ── Step 2: Generate image with DALL-E 3 ─────────────────────────────────
-      console.log('[VideoPipeline] Step 2: Generating DALL-E 3 image...');
-      let dalleRes;
-      try {
-        dalleRes = await axios.post(
-          'https://api.openai.com/v1/images/generations',
-          {
-            model: 'dall-e-2',
-            prompt: `${prompts.imagePrompt}. Professional advertising photography, high quality.`,
-            n: 1,
-            size: '1024x1024',
+            max_tokens: 200,
+            temperature: 0.7,
           },
           {
             headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
-            timeout: 60000,
+            timeout: 30000,
           }
         );
-      } catch (dalleErr) {
-        const detail = JSON.stringify(dalleErr.response?.data || dalleErr.message);
-        console.error('[VideoPipeline] DALL-E error:', dalleErr.response?.status, detail);
-        throw new Error(`DALL-E step failed (${dalleErr.response?.status}): ${detail}`);
+        const raw = promptRes.data.choices[0].message.content.trim();
+        const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(jsonStr);
+        prompts = { ...prompts, ...parsed };
+      } catch (gptErr) {
+        console.warn('[VideoPipeline] GPT prompt generation failed, using defaults:', gptErr.message);
       }
+      console.log('[VideoPipeline] Step 1 done. Motion prompt:', prompts.motionPrompt);
 
-      const imageUrl = dalleRes.data.data[0].url;
-      console.log('[VideoPipeline] Step 2 done. Image URL obtained.');
+      // ── Step 2: Fetch a placeholder starting frame ────────────────────────────
+      console.log('[VideoPipeline] Step 2: Fetching starting frame image...');
+      const imgWidth = aspectRatio === '9:16' ? 576 : 1024;
+      const imgHeight = aspectRatio === '9:16' ? 1024 : 576;
+      const seed = Math.floor(Math.random() * 1000);
+
+      let promptImage;
+      try {
+        const imgRes = await axios.get(
+          `https://picsum.photos/seed/${seed}/${imgWidth}/${imgHeight}`,
+          { responseType: 'arraybuffer', timeout: 15000 }
+        );
+        const b64 = Buffer.from(imgRes.data).toString('base64');
+        promptImage = `data:image/jpeg;base64,${b64}`;
+        console.log('[VideoPipeline] Step 2 done. Placeholder image fetched.');
+      } catch (imgErr) {
+        console.error('[VideoPipeline] Placeholder image fetch failed:', imgErr.message);
+        throw new Error(`Image fetch failed: ${imgErr.message}`);
+      }
 
       // ── Step 3: Runway ML image-to-video ─────────────────────────────────────
       console.log('[VideoPipeline] Step 3: Sending to Runway ML...');
-      const runwayPayload = {
-        model: 'gen3a_turbo',
-        promptImage: imageUrl,
-        promptText: prompts.motionPrompt,
-        duration: 5,
-        ratio: aspectRatio === '9:16' ? '768:1280' : '1280:768',
-      };
-
       let runwayRes;
       try {
         runwayRes = await axios.post(
           `${this.runwayBase}/image_to_video`,
-          runwayPayload,
+          {
+            model: 'gen3a_turbo',
+            promptImage,
+            promptText: prompts.motionPrompt,
+            duration: 5,
+            ratio: aspectRatio === '9:16' ? '768:1280' : '1280:768',
+          },
           {
             headers: {
               Authorization: `Bearer ${this.runwayKey}`,
@@ -139,11 +125,11 @@ class VideoPipeline {
         pool.query(
           `INSERT INTO ad_creatives (tenant_id, name, type, asset_url, thumbnail_url, generated_by_ai)
            VALUES ($1, $2, 'video', $3, $4, true)`,
-          [tenantId, `AI Video - ${brandName}`, videoUrl, imageUrl]
+          [tenantId, `AI Video - ${brandName}`, videoUrl, null]
         ).catch((e) => console.warn('[VideoPipeline] Creative save skipped:', e.message));
       }
 
-      return { videoUrl, imageUrl, headline: prompts.headline };
+      return { videoUrl, imageUrl: null, headline: prompts.headline };
     } catch (err) {
       const errMsg = err.response?.data?.error || err.response?.data?.message || err.message;
       console.error('[VideoPipeline] Pipeline failed:', errMsg);
