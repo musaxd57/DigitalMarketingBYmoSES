@@ -16,7 +16,7 @@ class VideoPipeline {
   }
 
   async runPipeline(brief) {
-    const { brandName, productDescription, videoStyle, platform, tenantId } = brief;
+    const { brandName, productDescription, videoStyle, platform, duration, tenantId } = brief;
 
     if (!this.runwayKey) {
       throw new Error('RUNWAY_API_KEY is not configured. Please add it to your environment variables.');
@@ -96,7 +96,7 @@ class VideoPipeline {
             model: 'gen3a_turbo',
             promptImage,
             promptText: prompts.motionPrompt,
-            duration: 5,
+            duration: [5, 10].includes(duration) ? duration : 5,
             ratio: aspectRatio === '9:16' ? '768:1280' : '1280:768',
           },
           {

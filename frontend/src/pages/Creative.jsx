@@ -21,7 +21,7 @@ export default function Creative() {
   // Video state
   const [videoForm, setVideoForm] = useState({
     brandName: '', productDescription: '', targetAudience: '',
-    videoStyle: 'ugc', duration: 30, platform: 'tiktok',
+    videoStyle: 'ugc', duration: 5, platform: 'tiktok',
   });
   const [generatingVideo, setGeneratingVideo] = useState(false);
   const [videoJob, setVideoJob] = useState(null);
@@ -386,7 +386,7 @@ export default function Creative() {
                 <label className={labelClass}>Duration (seconds)</label>
                 <select className={inputClass} value={videoForm.duration}
                   onChange={(e) => setVideoForm((f) => ({ ...f, duration: parseInt(e.target.value) }))}>
-                  {[15, 30, 45, 60].map((d) => <option key={d} value={d}>{d}s</option>)}
+                  {[5, 10].map((d) => <option key={d} value={d}>{d}s</option>)}
                 </select>
               </div>
             </div>
