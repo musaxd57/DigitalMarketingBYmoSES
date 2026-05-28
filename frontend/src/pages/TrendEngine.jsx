@@ -25,8 +25,8 @@ function OpportunityScore({ score }) {
         </div>
       </div>
       <div>
-        <p className="text-white text-sm font-semibold">Opportunity Score</p>
-        <p className="text-[#555] text-xs">{s >= 75 ? 'High opportunity' : s >= 50 ? 'Moderate' : 'Low opportunity'}</p>
+        <p className="text-white text-sm font-semibold">Fırsat Skoru</p>
+        <p className="text-[#555] text-xs">{s >= 75 ? 'Yüksek fırsat' : s >= 50 ? 'Orta' : 'Düşük fırsat'}</p>
       </div>
     </div>
   );
@@ -94,6 +94,7 @@ export default function TrendEngine() {
   const [generating, setGenerating] = useState(false);
   const [platform, setPlatform] = useState('tiktok');
   const [niche, setNiche] = useState('');
+  const [language, setLanguage] = useState('tr');
   const [activeSection, setActiveSection] = useState('hashtags');
 
   useEffect(() => {
@@ -115,7 +116,7 @@ export default function TrendEngine() {
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      await trendsAPI.generate({ platform, niche: niche || undefined });
+      await trendsAPI.generate({ platform, niche: niche || undefined, language });
       // Poll for completion
       const pollInterval = setInterval(async () => {
         try {
@@ -141,11 +142,11 @@ export default function TrendEngine() {
   };
 
   const sections = [
-    { key: 'hashtags', label: 'Hashtags', count: report?.trending_hashtags?.length || 0 },
-    { key: 'formats', label: 'Formats', count: report?.trending_formats?.length || 0 },
-    { key: 'hooks', label: 'Viral Hooks', count: report?.viral_hooks?.length || 0 },
-    { key: 'sounds', label: 'Sounds', count: report?.trending_sounds?.length || 0 },
-    { key: 'recommendations', label: 'Actions', count: report?.recommendations?.length || 0 },
+    { key: 'hashtags', label: 'Hashtagler', count: report?.trending_hashtags?.length || 0 },
+    { key: 'formats', label: 'Formatlar', count: report?.trending_formats?.length || 0 },
+    { key: 'hooks', label: 'Viral Kancalar', count: report?.viral_hooks?.length || 0 },
+    { key: 'sounds', label: 'Sesler', count: report?.trending_sounds?.length || 0 },
+    { key: 'recommendations', label: 'Öneriler', count: report?.recommendations?.length || 0 },
   ];
 
   return (
@@ -153,13 +154,13 @@ export default function TrendEngine() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-white text-xl font-semibold">Trend Engine</h1>
-          <p className="text-[#555] text-sm">AI-powered viral content trend analysis</p>
+          <h1 className="text-white text-xl font-semibold">Trend Motoru</h1>
+          <p className="text-[#555] text-sm">Yapay zeka destekli viral içerik trend analizi</p>
         </div>
         <div className="flex items-center gap-2">
           <input
             className="bg-[#111118] border border-white/5 text-white text-sm rounded-lg px-3 py-2 w-36 focus:outline-none focus:border-[#00ff88]/30 placeholder-[#333]"
-            placeholder="Niche (optional)"
+            placeholder="Niş (opsiyonel)"
             value={niche}
             onChange={(e) => setNiche(e.target.value)}
           />
@@ -170,7 +171,15 @@ export default function TrendEngine() {
           >
             <option value="tiktok">TikTok</option>
             <option value="instagram">Instagram</option>
-            <option value="all">All Platforms</option>
+            <option value="all">Tüm Platformlar</option>
+          </select>
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            className="bg-[#111118] border border-white/5 text-[#888] text-sm rounded-lg px-3 py-2 focus:outline-none"
+          >
+            <option value="tr">Türkçe</option>
+            <option value="en">English</option>
           </select>
           <button
             onClick={handleGenerate}
@@ -180,7 +189,7 @@ export default function TrendEngine() {
             {generating ? (
               <div className="w-4 h-4 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin" />
             ) : '⚡'}
-            {generating ? 'Analyzing...' : 'Run Analysis'}
+            {generating ? 'Analiz ediliyor...' : 'Analiz Başlat'}
           </button>
         </div>
       </div>
@@ -196,9 +205,9 @@ export default function TrendEngine() {
           <div className="w-20 h-20 rounded-full bg-[#00ff88]/5 border border-[#00ff88]/10 flex items-center justify-center">
             <span className="text-4xl">📈</span>
           </div>
-          <h3 className="text-white text-lg font-semibold">No Trend Reports Yet</h3>
+          <h3 className="text-white text-lg font-semibold">Henüz Trend Raporu Yok</h3>
           <p className="text-[#555] text-sm text-center max-w-sm">
-            Click "Run Analysis" to generate your first AI-powered trend report. Analysis takes about 2 minutes.
+            İlk yapay zeka trend raporunu oluşturmak için "Analiz Başlat"a tıkla. Analiz yaklaşık 2 dakika sürer.
           </p>
         </div>
       ) : (

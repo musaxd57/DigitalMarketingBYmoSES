@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const { randomUUID } = require('crypto');
 const router = express.Router();
 const { pool } = require('../models/db');
 const { authenticate } = require('../middleware/auth');
@@ -8,8 +9,24 @@ const config = require('../config');
 const VideoPipeline = require('../services/videoPipeline');
 const TrendEngine = require('../services/trendEngine');
 
+// In-memory job store for ad copy (avoids DB dependency for job tracking)
+const adCopyJobs = new Map();
+// In-memory job store for voiceover
+const voiceoverJobs = new Map();
+
+// Auto-clean jobs older than 30 minutes
+setInterval(() => {
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  for (const [id, job] of adCopyJobs.entries()) {
+    if (job.createdAt < cutoff) adCopyJobs.delete(id);
+  }
+  for (const [id, job] of voiceoverJobs.entries()) {
+    if (job.createdAt < cutoff) voiceoverJobs.delete(id);
+  }
+}, 5 * 60 * 1000);
+
 // ─── POST /api/ai/ad-copy ─────────────────────────────────────────────────────
-// Generate ad copy variants using OpenAI
+// Starts async ad copy generation — returns jobId immediately, no DB required
 router.post('/ad-copy', authenticate, aiLimiter, async (req, res) => {
   const {
     brandName,
@@ -18,6 +35,7 @@ router.post('/ad-copy', authenticate, aiLimiter, async (req, res) => {
     tone = 'persuasive',
     platform = 'meta',
     variants = 3,
+    language = 'tr',
     campaignId,
   } = req.body;
 
@@ -25,121 +43,110 @@ router.post('/ad-copy', authenticate, aiLimiter, async (req, res) => {
     return res.status(400).json({ error: 'brandName and productDescription are required' });
   }
 
-  // Log generation start
-  const genRes = await pool.query(
-    `INSERT INTO ai_generations
-       (tenant_id, user_id, type, status, input_data, model_used)
-     VALUES ($1, $2, 'ad_copy', 'processing', $3, $4)
-     RETURNING id`,
-    [
-      req.user.tenantId,
-      req.user.id,
-      JSON.stringify({ brandName, productDescription, targetAudience, tone, platform, variants }),
-      config.openai.model,
-    ]
-  );
-  const generationId = genRes.rows[0].id;
+  const jobId = randomUUID();
+  adCopyJobs.set(jobId, { status: 'processing', createdAt: Date.now() });
 
-  try {
-    const platformGuidance = {
-      meta: 'Facebook/Instagram ad. Primary text up to 125 chars, headline 40 chars, description 30 chars.',
-      google: 'Google Search ad. Headline 30 chars, description 90 chars, call to action.',
-      tiktok: 'TikTok ad. Hook in first 3 seconds, energetic, conversational, include trending language.',
-    };
+  // Respond immediately
+  res.status(202).json({ generationId: jobId, status: 'processing' });
 
-    const systemPrompt = `You are an expert digital advertising copywriter with 10+ years creating high-converting ad copy.
+  // Run OpenAI in background
+  setImmediate(async () => {
+    try {
+      const platformGuidance = {
+        meta: 'Facebook/Instagram ad. Primary text up to 125 chars, headline 40 chars, description 30 chars.',
+        google: 'Google Search ad. Headline 30 chars, description 90 chars, call to action.',
+        tiktok: 'TikTok ad. Hook in first 3 seconds, energetic, conversational, include trending language.',
+      };
+
+      const langInstruction = language === 'tr'
+        ? 'IMPORTANT: Write ALL ad copy content in Turkish language.'
+        : 'Write ALL ad copy content in English.';
+
+      const systemPrompt = `You are an expert digital advertising copywriter with 10+ years creating high-converting ad copy.
 Generate ${variants} distinct ad copy variants for ${platform} ads.
 Platform specs: ${platformGuidance[platform] || platformGuidance.meta}
 Tone: ${tone}
-Return a JSON array with exactly ${variants} objects, each containing:
-{
-  "variant": number,
-  "headline": "...",
-  "primaryText": "...",
-  "description": "...",
-  "callToAction": "...",
-  "hook": "first 3 seconds hook line",
-  "uniqueAngle": "the unique selling angle used"
-}`;
+${langInstruction}
+Return a JSON object with key "variants" containing exactly ${variants} objects, each having:
+{ "variant": number, "headline": "...", "primaryText": "...", "description": "...", "callToAction": "...", "hook": "...", "uniqueAngle": "..." }`;
 
-    const userPrompt = `Brand: ${brandName}
+      const userPrompt = `Brand: ${brandName}
 Product/Service: ${productDescription}
 Target Audience: ${targetAudience || 'general consumers'}
 Generate ${variants} high-converting ad copy variants.`;
 
-    const openaiRes = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: config.openai.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: config.openai.maxTokens,
-        temperature: 0.8,
-        response_format: { type: 'json_object' },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${config.openai.apiKey}`,
-          'Content-Type': 'application/json',
+      const openaiRes = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: config.openai.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: config.openai.maxTokens,
+          temperature: 0.8,
+          response_format: { type: 'json_object' },
         },
-      }
-    );
-
-    const usage = openaiRes.data.usage;
-    let parsedContent;
-    try {
-      const raw = openaiRes.data.choices[0].message.content;
-      parsedContent = JSON.parse(raw);
-      // Handle both array and { variants: [...] } format
-      const adCopyVariants = Array.isArray(parsedContent) ? parsedContent : (parsedContent.variants || parsedContent.ad_copy || Object.values(parsedContent)[0]);
-
-      // Calculate cost (gpt-4-turbo: $0.01/1K input, $0.03/1K output)
-      const costUsd = (usage.prompt_tokens / 1000) * 0.01 + (usage.completion_tokens / 1000) * 0.03;
-
-      await pool.query(
-        `UPDATE ai_generations
-         SET status = 'completed', output_data = $1, tokens_used = $2, cost_usd = $3,
-             job_completed_at = NOW(), updated_at = NOW()
-         WHERE id = $4`,
-        [JSON.stringify({ variants: adCopyVariants }), usage.total_tokens, costUsd, generationId]
+        {
+          headers: {
+            Authorization: `Bearer ${config.openai.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 90000,
+        }
       );
 
-      // Create creative records
-      if (campaignId) {
-        for (const variant of adCopyVariants) {
-          await pool.query(
-            `INSERT INTO ad_creatives
-               (tenant_id, campaign_id, name, type, headline, primary_text, description,
-                call_to_action, generated_by_ai, ai_generation_id)
-             VALUES ($1, $2, $3, 'text', $4, $5, $6, $7, true, $8)`,
-            [
-              req.user.tenantId, campaignId,
-              `${brandName} - ${platform} Ad Variant ${variant.variant}`,
-              variant.headline, variant.primaryText,
-              variant.description, variant.callToAction, generationId,
-            ]
-          );
-        }
-      }
+      const usage = openaiRes.data.usage;
+      const raw = openaiRes.data.choices[0].message.content;
+      const parsedContent = JSON.parse(raw);
+      const adCopyVariants = Array.isArray(parsedContent)
+        ? parsedContent
+        : (parsedContent.variants || parsedContent.ad_copy || Object.values(parsedContent)[0]);
 
-      return res.json({
-        generationId,
+      adCopyJobs.set(jobId, {
+        status: 'completed',
         variants: adCopyVariants,
-        usage: { tokens: usage.total_tokens, costUsd },
+        usage: { tokens: usage.total_tokens },
+        createdAt: Date.now(),
       });
-    } catch (parseErr) {
-      throw new Error(`Failed to parse OpenAI response: ${parseErr.message}`);
+
+      // Best-effort DB save
+      pool.query(
+        `INSERT INTO ai_generations
+           (tenant_id, user_id, type, status, input_data, model_used, output_data, tokens_used, job_completed_at)
+         VALUES ($1, $2, 'ad_copy', 'completed', $3, $4, $5, $6, NOW())`,
+        [
+          req.user.tenantId,
+          req.user.id,
+          JSON.stringify({ brandName, productDescription, targetAudience, tone, platform, variants }),
+          config.openai.model,
+          JSON.stringify({ variants: adCopyVariants }),
+          usage.total_tokens,
+        ]
+      ).catch((e) => console.warn('[AI] DB save skipped:', e.message));
+
+    } catch (err) {
+      console.error('[AI] Ad copy error:', err.response?.data || err.message);
+      adCopyJobs.set(jobId, {
+        status: 'failed',
+        error: err.response?.data?.error?.message || err.message,
+        createdAt: Date.now(),
+      });
     }
-  } catch (err) {
-    console.error('[AI] Ad copy error:', err.response?.data || err.message);
-    await pool.query(
-      `UPDATE ai_generations SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
-      [err.message, generationId]
-    );
-    return res.status(500).json({ error: 'Failed to generate ad copy', details: err.message });
+  });
+});
+
+// ─── GET /api/ai/ad-copy/status/:id ──────────────────────────────────────────
+router.get('/ad-copy/status/:id', authenticate, async (req, res) => {
+  const job = adCopyJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found or expired' });
+  if (job.status === 'completed') {
+    return res.json({ status: 'completed', generationId: req.params.id, variants: job.variants, usage: job.usage });
   }
+  if (job.status === 'failed') {
+    return res.json({ status: 'failed', error: job.error });
+  }
+  return res.json({ status: 'processing' });
 });
 
 // ─── POST /api/ai/video ───────────────────────────────────────────────────────
@@ -216,82 +223,88 @@ router.get('/video/status/:jobId', authenticate, async (req, res) => {
 });
 
 // ─── POST /api/ai/voiceover ───────────────────────────────────────────────────
-// Generate voiceover using ElevenLabs
+// Async voiceover using OpenAI TTS — same API key as ad copy, no extra setup
 router.post('/voiceover', authenticate, aiLimiter, async (req, res) => {
   const {
     text,
-    voiceId = config.elevenlabs.defaultVoiceId,
-    modelId = 'eleven_multilingual_v2',
-    stability = 0.5,
-    similarityBoost = 0.75,
-    style = 0.0,
-    useSpeakerBoost = true,
+    voice = 'nova',
+    model = 'tts-1',
+    speed = 1.0,
   } = req.body;
 
   if (!text || text.length < 10) {
     return res.status(400).json({ error: 'text is required (min 10 characters)' });
   }
-  if (text.length > 5000) {
-    return res.status(400).json({ error: 'text exceeds 5000 character limit' });
+  if (text.length > 4096) {
+    return res.status(400).json({ error: 'text exceeds 4096 character limit' });
   }
 
-  const genRes = await pool.query(
-    `INSERT INTO ai_generations
-       (tenant_id, user_id, type, status, input_data, model_used, job_started_at)
-     VALUES ($1, $2, 'voiceover', 'processing', $3, 'elevenlabs', NOW())
-     RETURNING id`,
-    [req.user.tenantId, req.user.id, JSON.stringify({ text, voiceId, modelId })]
-  );
-  const generationId = genRes.rows[0].id;
+  const jobId = randomUUID();
+  voiceoverJobs.set(jobId, { status: 'processing', createdAt: Date.now() });
 
-  try {
-    const elevenRes = await axios.post(
-      `${config.elevenlabs.baseUrl}/text-to-speech/${voiceId}`,
-      {
-        text,
-        model_id: modelId,
-        voice_settings: {
-          stability,
-          similarity_boost: similarityBoost,
-          style,
-          use_speaker_boost: useSpeakerBoost,
-        },
-      },
-      {
-        headers: {
-          'xi-api-key': config.elevenlabs.apiKey,
-          'Content-Type': 'application/json',
-          Accept: 'audio/mpeg',
-        },
-        responseType: 'arraybuffer',
-      }
-    );
+  res.status(202).json({ generationId: jobId, status: 'processing' });
 
-    // Convert audio to base64 for response
-    const audioBase64 = Buffer.from(elevenRes.data).toString('base64');
-    const audioDataUrl = `data:audio/mpeg;base64,${audioBase64}`;
+  setImmediate(async () => {
+    try {
+      const ttsRes = await axios.post(
+        'https://api.openai.com/v1/audio/speech',
+        { model, input: text, voice, speed, response_format: 'mp3' },
+        {
+          headers: {
+            Authorization: `Bearer ${config.openai.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          responseType: 'arraybuffer',
+          timeout: 60000,
+        }
+      );
 
-    await pool.query(
-      `UPDATE ai_generations
-       SET status = 'completed', output_text = $1, job_completed_at = NOW(), updated_at = NOW()
-       WHERE id = $2`,
-      [`Audio generated - ${text.substring(0, 100)}...`, generationId]
-    );
+      const audioBase64 = Buffer.from(ttsRes.data).toString('base64');
+      const audioDataUrl = `data:audio/mpeg;base64,${audioBase64}`;
 
+      voiceoverJobs.set(jobId, {
+        status: 'completed',
+        audioBase64: audioDataUrl,
+        characterCount: text.length,
+        createdAt: Date.now(),
+      });
+
+      pool.query(
+        `INSERT INTO ai_generations
+           (tenant_id, user_id, type, status, input_data, model_used, job_completed_at)
+         VALUES ($1, $2, 'voiceover', 'completed', $3, $4, NOW())`,
+        [req.user.tenantId, req.user.id, JSON.stringify({ text: text.substring(0, 100), voice }), model]
+      ).catch((e) => console.warn('[AI] Voiceover DB save skipped:', e.message));
+
+    } catch (err) {
+      const status = err.response?.status;
+      let errorMsg = err.message;
+      if (status === 401) errorMsg = 'OpenAI API anahtarı geçersiz. Render ortam değişkenlerini kontrol et.';
+      else if (status === 429) errorMsg = 'OpenAI rate limit aşıldı. Biraz bekle.';
+      else if (status === 402) errorMsg = 'OpenAI kredi yetersiz. Hesabına kredi ekle.';
+      console.error('[AI] Voiceover (OpenAI TTS) error:', status, err.message);
+      voiceoverJobs.set(jobId, { status: 'failed', error: errorMsg, createdAt: Date.now() });
+    }
+  });
+});
+
+// ─── GET /api/ai/voiceover/status/:id ────────────────────────────────────────
+router.get('/voiceover/status/:id', authenticate, async (req, res) => {
+  const job = voiceoverJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found or expired' });
+  if (job.status === 'completed') {
     return res.json({
-      generationId,
-      audioBase64: audioDataUrl,
+      status: 'completed',
+      generationId: req.params.id,
+      audioBase64: job.audioBase64,
       contentType: 'audio/mpeg',
-      characterCount: text.length,
+      characterCount: job.characterCount,
     });
-  } catch (err) {
-    console.error('[AI] Voiceover error:', err.response?.data || err.message);
-    await pool.query(
-      `UPDATE ai_generations SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
-      [err.message, generationId]
-    );
-    return res.status(500).json({ error: 'Failed to generate voiceover', details: err.message });
   }
+  if (job.status === 'failed') {
+    return res.json({ status: 'failed', error: job.error });
+  }
+  return res.json({ status: 'processing' });
 });
 
 // ─── POST /api/ai/analyze ─────────────────────────────────────────────────────
@@ -359,6 +372,7 @@ Analyze ad campaign data and provide actionable insights in JSON format with:
           Authorization: `Bearer ${config.openai.apiKey}`,
           'Content-Type': 'application/json',
         },
+        timeout: 90000,
       }
     );
 

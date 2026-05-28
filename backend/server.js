@@ -136,7 +136,8 @@ const checkDatabaseConnection = async () => {
     logger.info('[Server] Database connection verified');
     return true;
   } catch (err) {
-    logger.error('[Server] Database connection failed:', err.message);
+    logger.error('[Server] Database connection failed: ' + (err.message || err.code || JSON.stringify(err)));
+    logger.error('[Server] DB error detail: ' + err.stack);
     return false;
   }
 };
@@ -190,9 +191,8 @@ process.on('uncaughtException', (err) => {
 const startServer = async () => {
   const dbConnected = await checkDatabaseConnection();
 
-  if (!dbConnected && config.env === 'production') {
-    logger.error('[Server] Cannot start without database connection in production');
-    process.exit(1);
+  if (!dbConnected) {
+    logger.warn('[Server] Starting without database connection - check DATABASE_URL');
   }
 
   // Schedule recurring background jobs

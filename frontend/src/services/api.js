@@ -139,13 +139,22 @@ export const creativeAPI = {
 };
 
 // ─── AI API ───────────────────────────────────────────────────────────────────
+const AI_TIMEOUT = 120000;
 export const aiAPI = {
   generateAdCopy: (data) => api.post('/ai/ad-copy', data),
-  generateVideo: (data) => api.post('/ai/video', data),
+  getAdCopyStatus: (id) => api.get(`/ai/ad-copy/status/${id}`),
+  generateVideo: (data) => api.post('/ai/video', data, { timeout: AI_TIMEOUT }),
   getVideoStatus: (jobId) => api.get(`/ai/video/status/${jobId}`),
   generateVoiceover: (data) => api.post('/ai/voiceover', data),
-  analyze: (data) => api.post('/ai/analyze', data),
+  getVoiceoverStatus: (id) => api.get(`/ai/voiceover/status/${id}`),
+  analyze: (data) => api.post('/ai/analyze', data, { timeout: AI_TIMEOUT }),
   getGenerations: (params) => api.get('/ai/generations', { params }),
+};
+
+// ─── Demo API ─────────────────────────────────────────────────────────────────
+export const demoAPI = {
+  seed: () => api.post('/demo/seed', {}, { timeout: 60000 }),
+  clear: () => api.delete('/demo/clear'),
 };
 
 // ─── Trends API ───────────────────────────────────────────────────────────────
