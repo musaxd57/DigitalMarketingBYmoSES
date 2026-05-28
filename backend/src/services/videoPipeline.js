@@ -36,6 +36,7 @@ class VideoPipeline {
 
       console.log('[VideoPipeline] Step 1: GPT-4o prompt generation...');
       let prompts = {
+        imagePrompt: `${brandName} product, ${productDescription}, professional product photography`,
         motionPrompt: `${styleDesc}, product showcase for ${brandName}, cinematic movement`,
         headline: brandName,
       };
@@ -47,9 +48,9 @@ class VideoPipeline {
             model: 'gpt-4o-mini',
             messages: [
               { role: 'system', content: 'You are an expert video ad creative director. Respond ONLY with valid JSON.' },
-              { role: 'user', content: `Brand: ${brandName}, Product: ${productDescription}, Style: ${styleDesc}. Return JSON: {"motionPrompt":"...","headline":"..."}` },
+              { role: 'user', content: `Brand: ${brandName}, Product: ${productDescription}, Style: ${styleDesc}. Return JSON: {"imagePrompt":"detailed visual description of the product for image generation, focus on the actual product appearance","motionPrompt":"camera movement and animation style only","headline":"short catchy headline"}` },
             ],
-            max_tokens: 200,
+            max_tokens: 300,
             temperature: 0.7,
           },
           {
@@ -64,7 +65,7 @@ class VideoPipeline {
       } catch (gptErr) {
         console.warn('[VideoPipeline] GPT prompt generation failed, using defaults:', gptErr.message);
       }
-      console.log('[VideoPipeline] Step 1 done. Motion prompt:', prompts.motionPrompt);
+      console.log('[VideoPipeline] Step 1 done. Image prompt:', prompts.imagePrompt);
 
       // ── Step 2: Generate image with DALL-E 3 ─────────────────────────────────
       console.log('[VideoPipeline] Step 2: Generating DALL-E 3 image...');
@@ -74,7 +75,7 @@ class VideoPipeline {
           'https://api.openai.com/v1/images/generations',
           {
             model: 'dall-e-3',
-            prompt: `${prompts.motionPrompt}. Professional advertising photography, high quality, product shot.`,
+            prompt: `${prompts.imagePrompt}. Professional advertising photography, high quality, clean background.`,
             n: 1,
             size: '1024x1024',
           },
