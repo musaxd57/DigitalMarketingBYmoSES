@@ -77,7 +77,7 @@ class VideoPipeline {
       let dalleRes;
       try {
         dalleRes = await axios.post(
-          'https://api.openai.com/v1/images/generate',
+          'https://api.openai.com/v1/images/generations',
           {
             model: 'dall-e-3',
             prompt: `${prompts.imagePrompt}. Professional advertising photography, high quality.`,
@@ -135,7 +135,7 @@ class VideoPipeline {
       console.log('[VideoPipeline] Step 3 done. Task ID:', runwayRes.data.id);
 
       // ── Step 4: Poll Runway task until done ───────────────────────────────────
-      const videoUrl = await this._pollRunwayTask(taskId);
+      const videoUrl = await this._pollRunwayTask(runwayRes.data.id);
 
       // Optionally save creative to DB (non-blocking)
       if (tenantId) {
