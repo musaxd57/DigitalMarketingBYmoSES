@@ -85,8 +85,15 @@ export default function Creative() {
       const res = await aiAPI.generateAdCopy(copyForm);
       const { generationId } = res.data;
 
-      // Poll every 3 seconds for result
+      // Poll every 3 seconds for result, timeout after 2 minutes
+      const pollStart = Date.now();
       copyPollRef.current = setInterval(async () => {
+        if (Date.now() - pollStart > 120000) {
+          clearInterval(copyPollRef.current);
+          alert('Ad copy generation timed out. Please try again.');
+          setGeneratingCopy(false);
+          return;
+        }
         try {
           const statusRes = await aiAPI.getAdCopyStatus(generationId);
           const { status, variants, error } = statusRes.data;
@@ -392,7 +399,7 @@ export default function Creative() {
             </div>
             <button
               onClick={handleGenerateVideo}
-              disabled={generatingVideo || !!videoJob?.status === 'processing' || !videoForm.brandName || !videoForm.productDescription}
+              disabled={generatingVideo || videoJob?.status === 'processing' || !videoForm.brandName || !videoForm.productDescription}
               className="w-full py-2.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-400 font-medium text-sm hover:bg-purple-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
               🎬 Trigger Video Pipeline
