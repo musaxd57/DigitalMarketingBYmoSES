@@ -348,7 +348,7 @@ export default function Creative() {
           <div className="bg-[#111118] rounded-xl border border-white/5 p-5 space-y-4">
             <h2 className="text-white font-semibold text-sm">AI Video Production Pipeline</h2>
             <p className="text-[#555] text-xs leading-relaxed">
-              Brief → GPT-4 Script → PiAPI Flux Images → PiAPI Kling Video → ElevenLabs VO → Creatomate Render
+              Brief → GPT-4o Script + Image Prompt → DALL-E 3 Frame → Runway ML Gen-3 Video
             </p>
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
@@ -426,7 +426,7 @@ export default function Creative() {
 
                 {videoJob.status === 'processing' && (
                   <div className="space-y-2">
-                    {['Script generation', 'Image generation', 'Video clips', 'Voiceover', 'Final render'].map((step, i) => (
+                    {['GPT-4o script & prompt', 'DALL-E 3 image frame', 'Runway ML Gen-3 video'].map((step) => (
                       <div key={step} className="flex items-center gap-2 text-xs">
                         <div className="w-4 h-4 rounded-full bg-white/5 flex items-center justify-center">
                           <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />

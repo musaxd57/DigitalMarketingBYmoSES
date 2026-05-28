@@ -4,21 +4,17 @@ const { pool } = require('../models/db');
 
 /**
  * Video Production Pipeline
- * Orchestrates the n8n workflow for AI video generation:
- * Brief -> OpenAI Script -> PiAPI Flux images -> PiAPI Kling video -> ElevenLabs VO -> Creatomate render
+ * Step 1: OpenAI GPT-4o-mini → video script + image prompt + motion prompt
+ * Step 2: OpenAI DALL-E 3     → starting frame image
+ * Step 3: Runway ML Gen-3      → image-to-video generation
  */
 class VideoPipeline {
   constructor() {
-    this.n8nWebhookUrl = config.n8n.videoPipelineWebhook || `${config.n8n.webhookUrl}/webhook/video-pipeline`;
-    this.n8nApiKey = config.n8n.apiKey;
-    this.callbackBaseUrl = config.cors.origin.replace(':3000', ':3001');
+    this.openaiKey = config.openai.apiKey;
+    this.runwayKey = config.runway.apiKey;
+    this.runwayBase = 'https://api.runwayml.com/v1';
   }
 
-  /**
-   * Trigger the video generation n8n workflow
-   * @param {Object} brief - Video production brief
-   * @returns {Object} Job info with generationId
-   */
   async triggerVideoGeneration(brief) {
     const {
       tenantId,
@@ -32,11 +28,14 @@ class VideoPipeline {
       scriptDirection,
     } = brief;
 
-    // Create generation record
+    if (!this.runwayKey) {
+      throw new Error('RUNWAY_API_KEY is not configured. Please add it to your environment variables.');
+    }
+
     const genRes = await pool.query(
       `INSERT INTO ai_generations
          (tenant_id, user_id, type, status, input_data, model_used, job_started_at)
-       VALUES ($1, $2, 'video', 'processing', $3, 'n8n-pipeline', NOW())
+       VALUES ($1, $2, 'video', 'processing', $3, 'runway-gen3', NOW())
        RETURNING id`,
       [
         tenantId,
@@ -46,154 +45,134 @@ class VideoPipeline {
     );
     const generationId = genRes.rows[0].id;
 
+    // Fire-and-forget background execution
+    this._runPipeline(generationId, tenantId, {
+      brandName, productDescription, targetAudience,
+      videoStyle, duration, platform, scriptDirection,
+    }).catch((err) => {
+      console.error('[VideoPipeline] Background error:', err.message);
+    });
+
+    return { generationId, status: 'processing' };
+  }
+
+  async _runPipeline(generationId, tenantId, brief) {
+    const { brandName, productDescription, targetAudience, videoStyle, platform, duration, scriptDirection } = brief;
+
     try {
-      // Build the webhook payload for n8n
-      const payload = {
-        generationId,
-        tenantId,
-        brand: {
-          name: brandName,
-          productDescription,
-          targetAudience: targetAudience || 'general consumers aged 18-45',
+      // ── Step 1: Generate prompts via OpenAI ───────────────────────────────────
+      const aspectRatio = (platform === 'youtube') ? '16:9' : '9:16';
+      const styleMap = {
+        ugc: 'authentic user-generated content style, natural lighting, handheld camera feel',
+        testimonial: 'clean interview style, soft lighting, professional but personal',
+        educational: 'clean modern style with text overlays, bright and informative',
+        entertainment: 'dynamic fast-paced, vibrant colors, trendy social media aesthetic',
+        product_demo: 'sleek product showcase, studio lighting, professional close-ups',
+      };
+      const styleDesc = styleMap[videoStyle] || styleMap.ugc;
+
+      const promptRes = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert video ad creative director. Respond ONLY with valid JSON.',
+            },
+            {
+              role: 'user',
+              content: `Create a video ad brief for:
+Brand: ${brandName}
+Product: ${productDescription}
+Target Audience: ${targetAudience || 'General consumers 18-35'}
+Style: ${styleDesc}
+Platform: ${platform}
+Duration: ${duration}s
+${scriptDirection ? `Direction: ${scriptDirection}` : ''}
+
+Respond with this exact JSON:
+{
+  "imagePrompt": "detailed DALL-E 3 prompt for the opening scene (max 200 chars)",
+  "motionPrompt": "Runway ML camera motion description (max 100 chars, describe camera movement and scene action)",
+  "headline": "short punchy ad headline"
+}`,
+            },
+          ],
+          max_tokens: 300,
+          temperature: 0.7,
         },
-        video: {
-          style: videoStyle || 'ugc',
-          duration: duration || 30,
-          platform: platform || 'tiktok',
-          aspectRatio: this._getAspectRatio(platform),
-          resolution: this._getResolution(platform),
+        {
+          headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
+          timeout: 30000,
+        }
+      );
+
+      let prompts;
+      try {
+        const raw = promptRes.data.choices[0].message.content.trim();
+        const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        prompts = JSON.parse(jsonStr);
+      } catch {
+        prompts = {
+          imagePrompt: `${brandName} product advertisement, ${styleDesc}, ${platform} ad`,
+          motionPrompt: 'slow zoom in, product comes into focus',
+          headline: brandName,
+        };
+      }
+
+      // ── Step 2: Generate image with DALL-E 3 ─────────────────────────────────
+      const dalleRes = await axios.post(
+        'https://api.openai.com/v1/images/generate',
+        {
+          model: 'dall-e-3',
+          prompt: `${prompts.imagePrompt}. Professional advertising photography, high quality, 4K.`,
+          n: 1,
+          size: aspectRatio === '9:16' ? '1024x1792' : '1792x1024',
+          quality: 'standard',
+          response_format: 'url',
         },
-        script: {
-          direction: scriptDirection || null,
-          tone: this._getToneForStyle(videoStyle),
-          includeHook: true,
-          includeCTA: true,
-        },
-        production: {
-          generateImages: true,
-          generateVoiceover: true,
-          finalRender: true,
-          publishTargets: [],
-        },
-        callbacks: {
-          statusUrl: `${this.callbackBaseUrl}/api/ai/webhook/video-status`,
-          completionUrl: `${this.callbackBaseUrl}/api/ai/webhook/video-complete`,
-        },
+        {
+          headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
+          timeout: 60000,
+        }
+      );
+
+      const imageUrl = dalleRes.data.data[0].url;
+
+      // ── Step 3: Runway ML image-to-video ─────────────────────────────────────
+      const runwayPayload = {
+        model: 'gen3a_turbo',
+        promptImage: imageUrl,
+        promptText: prompts.motionPrompt,
+        duration: duration <= 5 ? 5 : 10,
+        ratio: aspectRatio === '9:16' ? '768:1280' : '1280:768',
+        watermark: false,
       };
 
-      // Fire n8n webhook (non-blocking)
-      const n8nRes = await axios.post(this.n8nWebhookUrl, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.n8nApiKey ? { 'X-N8N-API-KEY': this.n8nApiKey } : {}),
-        },
-        timeout: 10000,
-      });
-
-      const executionId = n8nRes.data?.executionId || n8nRes.data?.id || 'triggered';
-
-      await pool.query(
-        `UPDATE ai_generations
-         SET n8n_execution_id = $1, updated_at = NOW()
-         WHERE id = $2`,
-        [executionId, generationId]
-      );
-
-      return { generationId, executionId, status: 'processing' };
-    } catch (err) {
-      console.error('[VideoPipeline] Trigger error:', err.response?.data || err.message);
-
-      // If n8n is unavailable, still keep the record but mark the error
-      await pool.query(
-        `UPDATE ai_generations
-         SET status = 'failed',
-             error_message = $1,
-             updated_at = NOW()
-         WHERE id = $2`,
-        [`n8n webhook error: ${err.message}`, generationId]
-      );
-
-      throw new Error(`Video pipeline trigger failed: ${err.message}`);
-    }
-  }
-
-  /**
-   * Poll n8n execution status
-   */
-  async checkJobStatus(generationId, tenantId) {
-    const genRes = await pool.query(
-      `SELECT id, status, n8n_execution_id, output_data, asset_url, error_message,
-              job_started_at, job_completed_at
-       FROM ai_generations
-       WHERE id = $1 AND tenant_id = $2 AND type = 'video'`,
-      [generationId, tenantId]
-    );
-
-    if (genRes.rows.length === 0) {
-      throw new Error('Generation job not found');
-    }
-
-    const gen = genRes.rows[0];
-
-    // If we have an n8n execution ID, check its status
-    if (gen.n8n_execution_id && gen.status === 'processing' && this.n8nApiKey) {
-      try {
-        const execRes = await axios.get(
-          `${config.n8n.webhookUrl}/api/v1/executions/${gen.n8n_execution_id}`,
-          {
-            headers: { 'X-N8N-API-KEY': this.n8nApiKey },
-            timeout: 5000,
-          }
-        );
-
-        const execStatus = execRes.data?.status;
-
-        if (execStatus === 'success') {
-          const outputData = execRes.data?.data?.resultData?.runData || {};
-          const videoUrl = this._extractVideoUrl(outputData);
-
-          await pool.query(
-            `UPDATE ai_generations
-             SET status = 'completed',
-                 output_data = $1,
-                 asset_url = $2,
-                 job_completed_at = NOW(),
-                 updated_at = NOW()
-             WHERE id = $3`,
-            [JSON.stringify(outputData), videoUrl, generationId]
-          );
-
-          return { ...gen, status: 'completed', assetUrl: videoUrl };
-        } else if (execStatus === 'error') {
-          await pool.query(
-            `UPDATE ai_generations
-             SET status = 'failed',
-                 error_message = 'n8n workflow execution failed',
-                 updated_at = NOW()
-             WHERE id = $1`,
-            [generationId]
-          );
-          return { ...gen, status: 'failed' };
+      const runwayRes = await axios.post(
+        `${this.runwayBase}/image_to_video`,
+        runwayPayload,
+        {
+          headers: {
+            Authorization: `Bearer ${this.runwayKey}`,
+            'Content-Type': 'application/json',
+            'X-Runway-Version': '2024-11-06',
+          },
+          timeout: 30000,
         }
-      } catch (pollErr) {
-        console.warn('[VideoPipeline] Status poll failed:', pollErr.message);
-      }
-    }
+      );
 
-    return gen;
-  }
+      const taskId = runwayRes.data.id;
 
-  /**
-   * Handle webhook callback from n8n when video is complete
-   */
-  async handleCompletionCallback(payload) {
-    const { generationId, status, videoUrl, thumbnailUrl, error, metadata } = payload;
+      await pool.query(
+        `UPDATE ai_generations SET n8n_execution_id = $1, updated_at = NOW() WHERE id = $2`,
+        [taskId, generationId]
+      );
 
-    if (!generationId) {
-      throw new Error('generationId required in callback payload');
-    }
+      // ── Step 4: Poll Runway task until done ───────────────────────────────────
+      const videoUrl = await this._pollRunwayTask(taskId);
 
-    if (status === 'completed' && videoUrl) {
       await pool.query(
         `UPDATE ai_generations
          SET status = 'completed',
@@ -202,77 +181,87 @@ class VideoPipeline {
              job_completed_at = NOW(),
              updated_at = NOW()
          WHERE id = $3`,
-        [videoUrl, JSON.stringify({ videoUrl, thumbnailUrl, ...metadata }), generationId]
+        [
+          videoUrl,
+          JSON.stringify({ videoUrl, imageUrl, headline: prompts.headline, motionPrompt: prompts.motionPrompt }),
+          generationId,
+        ]
       );
 
-      // Create a creative record for the generated video
-      const gen = await pool.query(
-        'SELECT tenant_id, input_data FROM ai_generations WHERE id = $1',
-        [generationId]
+      // Save as creative asset
+      await pool.query(
+        `INSERT INTO ad_creatives
+           (tenant_id, name, type, asset_url, thumbnail_url, generated_by_ai, ai_generation_id)
+         VALUES ($1, $2, 'video', $3, $4, true, $5)`,
+        [tenantId, `AI Video - ${brief.brandName}`, videoUrl, imageUrl, generationId]
       );
-      if (gen.rows.length > 0) {
-        const inputData = gen.rows[0].input_data;
-        await pool.query(
-          `INSERT INTO ad_creatives
-             (tenant_id, name, type, asset_url, thumbnail_url, generated_by_ai, ai_generation_id)
-           VALUES ($1, $2, 'video', $3, $4, true, $5)`,
-          [
-            gen.rows[0].tenant_id,
-            `AI Video - ${inputData?.brandName || 'Generated'} - ${new Date().toLocaleDateString()}`,
-            videoUrl,
-            thumbnailUrl || null,
-            generationId,
-          ]
-        );
+    } catch (err) {
+      console.error('[VideoPipeline] Pipeline failed:', err.response?.data || err.message);
+      const errMsg = err.response?.data?.error || err.message;
+      await pool.query(
+        `UPDATE ai_generations SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
+        [errMsg, generationId]
+      );
+    }
+  }
+
+  async _pollRunwayTask(taskId, maxWaitMs = 600000) {
+    const start = Date.now();
+    const interval = 8000;
+
+    while (Date.now() - start < maxWaitMs) {
+      await new Promise((r) => setTimeout(r, interval));
+
+      const res = await axios.get(`${this.runwayBase}/tasks/${taskId}`, {
+        headers: {
+          Authorization: `Bearer ${this.runwayKey}`,
+          'X-Runway-Version': '2024-11-06',
+        },
+        timeout: 10000,
+      });
+
+      const { status, output, failure } = res.data;
+
+      if (status === 'SUCCEEDED' && output?.length > 0) {
+        return output[0];
       }
-    } else {
+      if (status === 'FAILED') {
+        throw new Error(`Runway task failed: ${failure || 'unknown reason'}`);
+      }
+    }
+
+    throw new Error('Video generation timed out after 10 minutes');
+  }
+
+  async checkJobStatus(generationId, tenantId) {
+    const result = await pool.query(
+      `SELECT id, status, output_data, asset_url, error_message, job_started_at, job_completed_at
+       FROM ai_generations
+       WHERE id = $1 AND tenant_id = $2 AND type = 'video'`,
+      [generationId, tenantId]
+    );
+
+    if (result.rows.length === 0) throw new Error('Generation job not found');
+    return result.rows[0];
+  }
+
+  async handleCompletionCallback(payload) {
+    const { generationId, status, videoUrl, thumbnailUrl, error, metadata } = payload;
+    if (!generationId) throw new Error('generationId required');
+
+    if (status === 'completed' && videoUrl) {
       await pool.query(
         `UPDATE ai_generations
-         SET status = 'failed',
-             error_message = $1,
-             updated_at = NOW()
-         WHERE id = $2`,
+         SET status = 'completed', asset_url = $1, output_data = $2, job_completed_at = NOW(), updated_at = NOW()
+         WHERE id = $3`,
+        [videoUrl, JSON.stringify({ videoUrl, thumbnailUrl, ...metadata }), generationId]
+      );
+    } else {
+      await pool.query(
+        `UPDATE ai_generations SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
         [error || 'Video generation failed', generationId]
       );
     }
-  }
-
-  _getAspectRatio(platform) {
-    const ratios = { tiktok: '9:16', instagram: '9:16', facebook: '4:5', youtube: '16:9' };
-    return ratios[platform] || '9:16';
-  }
-
-  _getResolution(platform) {
-    return platform === 'youtube' ? '1920x1080' : '1080x1920';
-  }
-
-  _getToneForStyle(style) {
-    const tones = {
-      ugc: 'authentic and conversational',
-      testimonial: 'genuine and personal',
-      educational: 'informative and clear',
-      entertainment: 'funny and engaging',
-      product_demo: 'enthusiastic and feature-focused',
-    };
-    return tones[style] || 'engaging and persuasive';
-  }
-
-  _extractVideoUrl(runData) {
-    // Navigate n8n execution data structure to find video URL
-    for (const nodeName of Object.keys(runData)) {
-      const nodeData = runData[nodeName];
-      if (Array.isArray(nodeData)) {
-        for (const batch of nodeData) {
-          if (Array.isArray(batch)) {
-            for (const item of batch) {
-              const url = item?.json?.video_url || item?.json?.url || item?.json?.asset_url;
-              if (url) return url;
-            }
-          }
-        }
-      }
-    }
-    return null;
   }
 }
 
