@@ -161,7 +161,6 @@ router.get('/ad-copy/status/:id', authenticate, async (req, res) => {
     return res.status(500).json({ error: 'Failed to get status' });
   }
 });
-});
 
 // ─── POST /api/ai/video ───────────────────────────────────────────────────────
 // Trigger n8n video production pipeline
