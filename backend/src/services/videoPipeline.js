@@ -30,7 +30,7 @@ class VideoPipeline {
 
       // DALL-E 3 size must match aspect ratio
       const dalleSize = aspectRatio === '9:16' ? '1024x1792' : '1792x1024';
-      const runwayRatio = aspectRatio === '9:16' ? '768:1280' : '1280:768';
+      const runwayRatio = aspectRatio === '9:16' ? '720:1280' : '1280:720';
 
       console.log('[VideoPipeline] Step 1: GPT-4o prompt generation...');
       let prompts = {
