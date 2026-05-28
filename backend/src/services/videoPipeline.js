@@ -2,12 +2,6 @@ const axios = require('axios');
 const config = require('../config');
 const { pool } = require('../models/db');
 
-/**
- * Video Production Pipeline
- * Step 1: OpenAI GPT-4o-mini → motion prompt + headline
- * Step 2: Fetch placeholder image (no DALL-E required)
- * Step 3: Runway ML Gen-3 Turbo → image-to-video generation
- */
 class VideoPipeline {
   constructor() {
     this.openaiKey = config.openai.apiKey;
@@ -23,21 +17,25 @@ class VideoPipeline {
     }
 
     try {
-      // ── Step 1: Generate prompts via OpenAI ───────────────────────────────────
+      // ── Step 1: Generate prompts via GPT-4o ───────────────────────────────────
       const aspectRatio = (platform === 'youtube') ? '16:9' : '9:16';
       const styleMap = {
-        ugc: 'authentic user-generated content style, natural lighting, handheld camera feel',
-        testimonial: 'clean interview style, soft lighting, professional but personal',
-        educational: 'clean modern style with text overlays, bright and informative',
-        entertainment: 'dynamic fast-paced, vibrant colors, trendy social media aesthetic',
-        product_demo: 'sleek product showcase, studio lighting, professional close-ups',
+        ugc: 'authentic user-generated content, natural daylight, handheld camera, real person feel',
+        testimonial: 'clean talking-head interview, soft bokeh background, warm professional lighting',
+        educational: 'bright clean modern aesthetic, crisp text overlays, informative and engaging',
+        entertainment: 'dynamic fast cuts, vibrant saturated colors, trendy Gen-Z social aesthetic',
+        product_demo: 'premium product showcase, studio lighting, dramatic shadows, Apple-style minimalism',
       };
       const styleDesc = styleMap[videoStyle] || styleMap.ugc;
 
+      // DALL-E 3 size must match aspect ratio
+      const dalleSize = aspectRatio === '9:16' ? '1024x1792' : '1792x1024';
+      const runwayRatio = aspectRatio === '9:16' ? '768:1280' : '1280:768';
+
       console.log('[VideoPipeline] Step 1: GPT-4o prompt generation...');
       let prompts = {
-        imagePrompt: `${brandName} product, ${productDescription}, professional product photography`,
-        motionPrompt: `${styleDesc}, product showcase for ${brandName}, cinematic movement`,
+        imagePrompt: `${brandName} ${productDescription}, professional product photography, ${styleDesc}`,
+        motionPrompt: `${styleDesc}, smooth cinematic camera movement, professional ad`,
         headline: brandName,
       };
 
@@ -45,12 +43,28 @@ class VideoPipeline {
         const promptRes = await axios.post(
           'https://api.openai.com/v1/chat/completions',
           {
-            model: 'gpt-4o-mini',
+            model: 'gpt-4o',
             messages: [
-              { role: 'system', content: 'You are an expert video ad creative director. Respond ONLY with valid JSON.' },
-              { role: 'user', content: `Brand: ${brandName}, Product: ${productDescription}, Style: ${styleDesc}. Return JSON: {"imagePrompt":"detailed visual description of the product for image generation, focus on the actual product appearance","motionPrompt":"camera movement and animation style only","headline":"short catchy headline"}` },
+              {
+                role: 'system',
+                content: `You are a world-class advertising creative director. Generate precise, vivid prompts for AI video generation. Respond ONLY with valid JSON, no markdown.`,
+              },
+              {
+                role: 'user',
+                content: `Create prompts for a ${platform} video ad.
+Brand: ${brandName}
+Product: ${productDescription}
+Style: ${styleDesc}
+
+Return JSON with exactly these keys:
+{
+  "imagePrompt": "A highly detailed DALL-E prompt describing the PRODUCT visually — include colors, materials, textures, lighting, setting. Must clearly depict the actual product. No abstract concepts.",
+  "motionPrompt": "Runway ML camera motion description — e.g. slow push-in, gentle rotation, subtle zoom. Keep it cinematic and smooth. Max 2 sentences.",
+  "headline": "Short punchy ad headline (max 6 words)"
+}`,
+              },
             ],
-            max_tokens: 300,
+            max_tokens: 400,
             temperature: 0.7,
           },
           {
@@ -67,41 +81,39 @@ class VideoPipeline {
       }
       console.log('[VideoPipeline] Step 1 done. Image prompt:', prompts.imagePrompt);
 
-      // ── Step 2: Generate image with DALL-E 3 ─────────────────────────────────
-      console.log('[VideoPipeline] Step 2: Generating DALL-E 3 image...');
+      // ── Step 2: Generate image with DALL-E 3 HD ───────────────────────────────
+      console.log('[VideoPipeline] Step 2: Generating DALL-E 3 HD image...');
       let promptImage;
       try {
         const dalleRes = await axios.post(
           'https://api.openai.com/v1/images/generations',
           {
             model: 'dall-e-3',
-            prompt: `${prompts.imagePrompt}. Professional advertising photography, high quality, clean background.`,
+            prompt: `${prompts.imagePrompt}. Ultra high quality advertising photograph, sharp focus, professional studio lighting, 8K resolution.`,
             n: 1,
-            size: '1024x1024',
+            size: dalleSize,
+            quality: 'hd',
           },
           {
             headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
-            timeout: 60000,
+            timeout: 90000,
           }
         );
         promptImage = dalleRes.data.data[0].url;
-        console.log('[VideoPipeline] Step 2 done. DALL-E image URL obtained.');
+        console.log('[VideoPipeline] Step 2 done. DALL-E HD image obtained.');
       } catch (dalleErr) {
-        // Fall back to placeholder if DALL-E fails
         console.warn('[VideoPipeline] DALL-E failed, using placeholder:', dalleErr.response?.data?.error?.message || dalleErr.message);
         const seed = Math.floor(Math.random() * 1000);
-        const imgWidth = aspectRatio === '9:16' ? 576 : 1024;
-        const imgHeight = aspectRatio === '9:16' ? 1024 : 576;
+        const [pw, ph] = dalleSize.split('x').map(Number);
         const imgRes = await axios.get(
-          `https://picsum.photos/seed/${seed}/${imgWidth}/${imgHeight}`,
+          `https://picsum.photos/seed/${seed}/${pw}/${ph}`,
           { responseType: 'arraybuffer', timeout: 15000 }
         );
-        const b64 = Buffer.from(imgRes.data).toString('base64');
-        promptImage = `data:image/jpeg;base64,${b64}`;
+        promptImage = `data:image/jpeg;base64,${Buffer.from(imgRes.data).toString('base64')}`;
       }
 
-      // ── Step 3: Runway ML image-to-video ─────────────────────────────────────
-      console.log('[VideoPipeline] Step 3: Sending to Runway ML...');
+      // ── Step 3: Runway ML Gen-3 Alpha image-to-video ─────────────────────────
+      console.log('[VideoPipeline] Step 3: Sending to Runway ML Gen-3 Alpha...');
       let runwayRes;
       try {
         runwayRes = await axios.post(
@@ -109,9 +121,9 @@ class VideoPipeline {
           {
             model: 'gen3a_turbo',
             promptImage,
-            promptText: prompts.motionPrompt,
+            promptText: `${prompts.motionPrompt}. Photorealistic, cinematic quality, smooth motion, professional advertisement.`,
             duration: [5, 10].includes(duration) ? duration : 5,
-            ratio: aspectRatio === '9:16' ? '768:1280' : '1280:768',
+            ratio: runwayRatio,
           },
           {
             headers: {
@@ -134,7 +146,6 @@ class VideoPipeline {
       // ── Step 4: Poll Runway task until done ───────────────────────────────────
       const videoUrl = await this._pollRunwayTask(runwayRes.data.id);
 
-      // Optionally save creative to DB (non-blocking)
       if (tenantId) {
         pool.query(
           `INSERT INTO ad_creatives (tenant_id, name, type, asset_url, thumbnail_url, generated_by_ai)
@@ -143,7 +154,7 @@ class VideoPipeline {
         ).catch((e) => console.warn('[VideoPipeline] Creative save skipped:', e.message));
       }
 
-      return { videoUrl, imageUrl: null, headline: prompts.headline };
+      return { videoUrl, imageUrl: promptImage, headline: prompts.headline };
     } catch (err) {
       const errMsg = err.response?.data?.error || err.response?.data?.message || err.message;
       console.error('[VideoPipeline] Pipeline failed:', errMsg);
