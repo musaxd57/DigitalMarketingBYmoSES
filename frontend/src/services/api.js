@@ -145,7 +145,8 @@ export const aiAPI = {
   getAdCopyStatus: (id) => api.get(`/ai/ad-copy/status/${id}`),
   generateVideo: (data) => api.post('/ai/video', data, { timeout: AI_TIMEOUT }),
   getVideoStatus: (jobId) => api.get(`/ai/video/status/${jobId}`),
-  generateVoiceover: (data) => api.post('/ai/voiceover', data, { timeout: AI_TIMEOUT }),
+  generateVoiceover: (data) => api.post('/ai/voiceover', data),
+  getVoiceoverStatus: (id) => api.get(`/ai/voiceover/status/${id}`),
   analyze: (data) => api.post('/ai/analyze', data, { timeout: AI_TIMEOUT }),
   getGenerations: (params) => api.get('/ai/generations', { params }),
 };

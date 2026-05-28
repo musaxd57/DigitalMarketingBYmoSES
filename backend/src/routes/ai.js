@@ -11,11 +11,17 @@ const TrendEngine = require('../services/trendEngine');
 
 // In-memory job store for ad copy (avoids DB dependency for job tracking)
 const adCopyJobs = new Map();
+// In-memory job store for voiceover
+const voiceoverJobs = new Map();
+
 // Auto-clean jobs older than 30 minutes
 setInterval(() => {
   const cutoff = Date.now() - 30 * 60 * 1000;
   for (const [id, job] of adCopyJobs.entries()) {
     if (job.createdAt < cutoff) adCopyJobs.delete(id);
+  }
+  for (const [id, job] of voiceoverJobs.entries()) {
+    if (job.createdAt < cutoff) voiceoverJobs.delete(id);
   }
 }, 5 * 60 * 1000);
 
@@ -217,7 +223,7 @@ router.get('/video/status/:jobId', authenticate, async (req, res) => {
 });
 
 // ─── POST /api/ai/voiceover ───────────────────────────────────────────────────
-// Generate voiceover using ElevenLabs
+// Async voiceover generation — responds immediately with jobId, runs ElevenLabs in background
 router.post('/voiceover', authenticate, aiLimiter, async (req, res) => {
   const {
     text,
@@ -236,63 +242,84 @@ router.post('/voiceover', authenticate, aiLimiter, async (req, res) => {
     return res.status(400).json({ error: 'text exceeds 5000 character limit' });
   }
 
-  const genRes = await pool.query(
-    `INSERT INTO ai_generations
-       (tenant_id, user_id, type, status, input_data, model_used, job_started_at)
-     VALUES ($1, $2, 'voiceover', 'processing', $3, 'elevenlabs', NOW())
-     RETURNING id`,
-    [req.user.tenantId, req.user.id, JSON.stringify({ text, voiceId, modelId })]
-  );
-  const generationId = genRes.rows[0].id;
+  const jobId = randomUUID();
+  voiceoverJobs.set(jobId, { status: 'processing', createdAt: Date.now() });
 
-  try {
-    const elevenRes = await axios.post(
-      `${config.elevenlabs.baseUrl}/text-to-speech/${voiceId}`,
-      {
-        text,
-        model_id: modelId,
-        voice_settings: {
-          stability,
-          similarity_boost: similarityBoost,
-          style,
-          use_speaker_boost: useSpeakerBoost,
+  // Respond immediately
+  res.status(202).json({ generationId: jobId, status: 'processing' });
+
+  // Run ElevenLabs in background
+  setImmediate(async () => {
+    try {
+      const elevenRes = await axios.post(
+        `${config.elevenlabs.baseUrl}/text-to-speech/${voiceId}`,
+        {
+          text,
+          model_id: modelId,
+          voice_settings: {
+            stability,
+            similarity_boost: similarityBoost,
+            style,
+            use_speaker_boost: useSpeakerBoost,
+          },
         },
-      },
-      {
-        headers: {
-          'xi-api-key': config.elevenlabs.apiKey,
-          'Content-Type': 'application/json',
-          Accept: 'audio/mpeg',
-        },
-        responseType: 'arraybuffer',
-      }
-    );
+        {
+          headers: {
+            'xi-api-key': config.elevenlabs.apiKey,
+            'Content-Type': 'application/json',
+            Accept: 'audio/mpeg',
+          },
+          responseType: 'arraybuffer',
+          timeout: 120000,
+        }
+      );
 
-    // Convert audio to base64 for response
-    const audioBase64 = Buffer.from(elevenRes.data).toString('base64');
-    const audioDataUrl = `data:audio/mpeg;base64,${audioBase64}`;
+      const audioBase64 = Buffer.from(elevenRes.data).toString('base64');
+      const audioDataUrl = `data:audio/mpeg;base64,${audioBase64}`;
 
-    await pool.query(
-      `UPDATE ai_generations
-       SET status = 'completed', output_text = $1, job_completed_at = NOW(), updated_at = NOW()
-       WHERE id = $2`,
-      [`Audio generated - ${text.substring(0, 100)}...`, generationId]
-    );
+      voiceoverJobs.set(jobId, {
+        status: 'completed',
+        audioBase64: audioDataUrl,
+        characterCount: text.length,
+        createdAt: Date.now(),
+      });
 
+      // Best-effort DB save
+      pool.query(
+        `INSERT INTO ai_generations
+           (tenant_id, user_id, type, status, input_data, model_used, job_completed_at)
+         VALUES ($1, $2, 'voiceover', 'completed', $3, 'elevenlabs', NOW())`,
+        [req.user.tenantId, req.user.id, JSON.stringify({ text: text.substring(0, 100), voiceId, modelId })]
+      ).catch((e) => console.warn('[AI] Voiceover DB save skipped:', e.message));
+
+    } catch (err) {
+      console.error('[AI] Voiceover error:', err.response?.status, err.message);
+      voiceoverJobs.set(jobId, {
+        status: 'failed',
+        error: err.message,
+        createdAt: Date.now(),
+      });
+    }
+  });
+});
+
+// ─── GET /api/ai/voiceover/status/:id ────────────────────────────────────────
+router.get('/voiceover/status/:id', authenticate, async (req, res) => {
+  const job = voiceoverJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found or expired' });
+  if (job.status === 'completed') {
     return res.json({
-      generationId,
-      audioBase64: audioDataUrl,
+      status: 'completed',
+      generationId: req.params.id,
+      audioBase64: job.audioBase64,
       contentType: 'audio/mpeg',
-      characterCount: text.length,
+      characterCount: job.characterCount,
     });
-  } catch (err) {
-    console.error('[AI] Voiceover error:', err.response?.data || err.message);
-    await pool.query(
-      `UPDATE ai_generations SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
-      [err.message, generationId]
-    );
-    return res.status(500).json({ error: 'Failed to generate voiceover', details: err.message });
   }
+  if (job.status === 'failed') {
+    return res.json({ status: 'failed', error: job.error });
+  }
+  return res.json({ status: 'processing' });
 });
 
 // ─── POST /api/ai/analyze ─────────────────────────────────────────────────────

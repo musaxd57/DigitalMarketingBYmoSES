@@ -32,6 +32,7 @@ export default function Creative() {
   const [voiceForm, setVoiceForm] = useState({ text: '', voiceId: '21m00Tcm4TlvDq8ikWAM' });
   const [generatingVoice, setGeneratingVoice] = useState(false);
   const [audioResult, setAudioResult] = useState(null);
+  const voicePollRef = useRef(null);
 
   // Score library state
   const [loadingCreatives, setLoadingCreatives] = useState(false);
@@ -60,6 +61,7 @@ export default function Creative() {
         socket.off('job:failed');
       }
       if (copyPollRef.current) clearInterval(copyPollRef.current);
+      if (voicePollRef.current) clearInterval(voicePollRef.current);
     };
   }, [socket, videoJob?.jobId]);
 
@@ -139,12 +141,40 @@ export default function Creative() {
     if (!voiceForm.text) return;
     setGeneratingVoice(true);
     setAudioResult(null);
+    if (voicePollRef.current) clearInterval(voicePollRef.current);
+
     try {
       const res = await aiAPI.generateVoiceover(voiceForm);
-      setAudioResult(res.data);
+      const { generationId } = res.data;
+
+      // Poll every 4 seconds for result
+      voicePollRef.current = setInterval(async () => {
+        try {
+          const statusRes = await aiAPI.getVoiceoverStatus(generationId);
+          const { status, audioBase64, characterCount, error } = statusRes.data;
+          if (status === 'completed') {
+            clearInterval(voicePollRef.current);
+            setAudioResult({ audioBase64, characterCount });
+            setGeneratingVoice(false);
+          } else if (status === 'failed') {
+            clearInterval(voicePollRef.current);
+            alert(`Voiceover failed: ${error || 'Unknown error'}`);
+            setGeneratingVoice(false);
+          }
+        } catch {
+          // ignore poll errors, keep trying
+        }
+      }, 4000);
+
+      // Stop polling after 3 minutes
+      setTimeout(() => {
+        if (voicePollRef.current) {
+          clearInterval(voicePollRef.current);
+          setGeneratingVoice(false);
+        }
+      }, 180000);
     } catch (err) {
       alert(`Failed: ${err.response?.data?.error || err.message}`);
-    } finally {
       setGeneratingVoice(false);
     }
   };
