@@ -34,42 +34,30 @@ class VideoPipeline {
       };
       const styleDesc = styleMap[videoStyle] || styleMap.ugc;
 
-      const promptRes = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are an expert video ad creative director. Respond ONLY with valid JSON.',
-            },
-            {
-              role: 'user',
-              content: `Create a video ad brief for:
-Brand: ${brandName}
-Product: ${productDescription}
-Target Audience: ${targetAudience || 'General consumers 18-35'}
-Style: ${styleDesc}
-Platform: ${platform}
-Duration: ${duration}s
-${scriptDirection ? `Direction: ${scriptDirection}` : ''}
-
-Respond with this exact JSON:
-{
-  "imagePrompt": "detailed DALL-E 3 prompt for the opening scene (max 200 chars)",
-  "motionPrompt": "Runway ML camera motion description (max 100 chars, describe camera movement and scene action)",
-  "headline": "short punchy ad headline"
-}`,
-            },
-          ],
-          max_tokens: 300,
+      console.log('[VideoPipeline] Step 1: GPT-4o prompt generation...');
+      let promptRes;
+      try {
+        promptRes = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: 'You are an expert video ad creative director. Respond ONLY with valid JSON.' },
+              { role: 'user', content: `Brand: ${brandName}, Product: ${productDescription}, Style: ${styleDesc}. Return JSON: {"imagePrompt":"...","motionPrompt":"...","headline":"..."}` },
+            ],
+            max_tokens: 300,
           temperature: 0.7,
         },
         {
           headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
           timeout: 30000,
-        }
-      );
+          }
+        );
+      } catch (gptErr) {
+        const detail = JSON.stringify(gptErr.response?.data || gptErr.message);
+        console.error('[VideoPipeline] GPT error:', gptErr.response?.status, detail);
+        throw new Error(`GPT step failed (${gptErr.response?.status}): ${detail}`);
+      }
 
       let prompts;
       try {
@@ -86,21 +74,28 @@ Respond with this exact JSON:
 
       // ── Step 2: Generate image with DALL-E 3 ─────────────────────────────────
       console.log('[VideoPipeline] Step 2: Generating DALL-E 3 image...');
-      const dalleRes = await axios.post(
-        'https://api.openai.com/v1/images/generate',
-        {
-          model: 'dall-e-3',
-          prompt: `${prompts.imagePrompt}. Professional advertising photography, high quality.`,
-          n: 1,
-          size: '1024x1024',
-          quality: 'standard',
-          response_format: 'b64_json',
-        },
-        {
-          headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
-          timeout: 60000,
-        }
-      );
+      let dalleRes;
+      try {
+        dalleRes = await axios.post(
+          'https://api.openai.com/v1/images/generate',
+          {
+            model: 'dall-e-3',
+            prompt: `${prompts.imagePrompt}. Professional advertising photography, high quality.`,
+            n: 1,
+            size: '1024x1024',
+            quality: 'standard',
+            response_format: 'b64_json',
+          },
+          {
+            headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
+            timeout: 60000,
+          }
+        );
+      } catch (dalleErr) {
+        const detail = JSON.stringify(dalleErr.response?.data || dalleErr.message);
+        console.error('[VideoPipeline] DALL-E error:', dalleErr.response?.status, detail);
+        throw new Error(`DALL-E step failed (${dalleErr.response?.status}): ${detail}`);
+      }
 
       const imgBase64 = `data:image/png;base64,${dalleRes.data.data[0].b64_json}`;
       const imageUrl = 'dalle-generated';
