@@ -188,8 +188,8 @@ demoRouter.post('/seed', authenticate, async (req, res) => {
     const accs = {};
     for (const a of accountDefs) {
       const r = await client.query(
-        `INSERT INTO ad_accounts (tenant_id, platform, account_id, account_name, currency, is_active)
-         VALUES ($1,$2,$3,$4,'USD',true) RETURNING id`,
+        `INSERT INTO ad_accounts (tenant_id, platform, account_id, account_name, is_active)
+         VALUES ($1,$2,$3,$4,true) RETURNING id`,
         [tenantId, a.platform, a.account_id, a.account_name]
       );
       accs[a.platform] = { id: r.rows[0].id, ...a };
