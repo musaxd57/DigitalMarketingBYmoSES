@@ -293,10 +293,19 @@ router.post('/voiceover', authenticate, aiLimiter, async (req, res) => {
       ).catch((e) => console.warn('[AI] Voiceover DB save skipped:', e.message));
 
     } catch (err) {
-      console.error('[AI] Voiceover error:', err.response?.status, err.message);
+      const status = err.response?.status;
+      let errorMsg = err.message;
+      if (status === 402) {
+        errorMsg = 'ElevenLabs kredi yetersiz (402). Ücretsiz plan 10.000 karakter/ay. Planı yükselt veya aylık sıfırlamayı bekle.';
+      } else if (status === 401) {
+        errorMsg = 'ElevenLabs API anahtarı geçersiz (401). Render ortam değişkenlerini kontrol et.';
+      } else if (status === 429) {
+        errorMsg = 'ElevenLabs istek limiti aşıldı (429). Birkaç dakika sonra tekrar dene.';
+      }
+      console.error('[AI] Voiceover error:', status, err.message);
       voiceoverJobs.set(jobId, {
         status: 'failed',
-        error: err.message,
+        error: errorMsg,
         createdAt: Date.now(),
       });
     }
