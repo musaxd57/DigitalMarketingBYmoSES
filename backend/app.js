@@ -137,7 +137,7 @@ trendRouter.get('/latest', authenticate, async (req, res) => {
 });
 
 trendRouter.post('/generate', authenticate, trendLimiter, async (req, res) => {
-  const { platform = 'tiktok', niche } = req.body;
+  const { platform = 'tiktok', niche, language = 'tr' } = req.body;
 
   // Respond immediately, run analysis in background
   const fakeJobId = `job_${Date.now()}`;
@@ -151,7 +151,7 @@ trendRouter.post('/generate', authenticate, trendLimiter, async (req, res) => {
   setImmediate(async () => {
     try {
       const engine = new TrendEngine();
-      await engine.generateTrendReport(req.user.tenantId, platform, niche);
+      await engine.generateTrendReport(req.user.tenantId, platform, niche, language);
       logger.info(`[Trends] Report generated for tenant ${req.user.tenantId}`);
     } catch (err) {
       logger.error(`[Trends] Background generation failed: ${err.message}`);

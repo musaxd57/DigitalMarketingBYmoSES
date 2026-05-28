@@ -17,7 +17,7 @@ class TrendEngine {
    * @param {string} platform - 'tiktok', 'instagram', 'all'
    * @param {string} niche - Industry/niche keyword
    */
-  async generateTrendReport(tenantId, platform = 'tiktok', niche = null) {
+  async generateTrendReport(tenantId, platform = 'tiktok', niche = null, language = 'tr') {
     // Create pending report
     const reportRes = await pool.query(
       `INSERT INTO trend_reports
@@ -41,7 +41,7 @@ class TrendEngine {
       };
 
       // Run GPT-4 analysis
-      const analysis = await this._analyzeWithGPT4(rawData, niche, platform);
+      const analysis = await this._analyzeWithGPT4(rawData, niche, platform, language);
 
       // Update report with results
       await pool.query(
@@ -177,7 +177,11 @@ class TrendEngine {
   /**
    * Analyze trend data with GPT-4
    */
-  async _analyzeWithGPT4(rawData, niche, platform) {
+  async _analyzeWithGPT4(rawData, niche, platform, language = 'tr') {
+    const langInstruction = language === 'tr'
+      ? 'IMPORTANT: Write ALL text fields (summary, action, title, hook, format, recommendation, insight, etc.) in Turkish language. Only keep hashtags and technical field names in English.'
+      : 'Write all content in English.';
+
     const systemPrompt = `You are a viral content strategist and digital advertising trend analyst.
 Your expertise covers:
 - TikTok algorithm and viral content patterns
@@ -186,6 +190,7 @@ Your expertise covers:
 - Paid advertising creative trends
 - Consumer behavior and purchase psychology
 
+${langInstruction}
 Analyze the provided trend data and return actionable insights in JSON format.`;
 
     const userPrompt = `Analyze these trending patterns${niche ? ` for the ${niche} industry` : ''} on ${platform}:
