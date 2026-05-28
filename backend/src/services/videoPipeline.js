@@ -47,7 +47,7 @@ class VideoPipeline {
             messages: [
               {
                 role: 'system',
-                content: `You are a world-class advertising creative director. Generate precise, vivid prompts for AI video generation. Respond ONLY with valid JSON, no markdown.`,
+                content: `You are a world-class advertising creative director. Generate precise, vivid prompts for AI video generation. Always write imagePrompt and motionPrompt in ENGLISH regardless of input language. Respond ONLY with valid JSON, no markdown.`,
               },
               {
                 role: 'user',
@@ -58,9 +58,9 @@ Style: ${styleDesc}
 
 Return JSON with exactly these keys:
 {
-  "imagePrompt": "A highly detailed DALL-E prompt describing the PRODUCT visually — include colors, materials, textures, lighting, setting. Must clearly depict the actual product. No abstract concepts.",
-  "motionPrompt": "Runway ML camera motion description — e.g. slow push-in, gentle rotation, subtle zoom. Keep it cinematic and smooth. Max 2 sentences.",
-  "headline": "Short punchy ad headline (max 6 words)"
+  "imagePrompt": "ENGLISH ONLY - highly detailed DALL-E prompt describing the product visually: exact colors, materials, textures, lighting, setting. Must clearly depict the actual product. Example: 'A beige linen shirt hanging on a wooden hanger, soft natural light, minimal white background, premium quality fabric texture visible'",
+  "motionPrompt": "ENGLISH ONLY - Runway ML camera motion: slow push-in, gentle rotation, subtle zoom. Cinematic and smooth. Max 2 sentences.",
+  "headline": "Short punchy ad headline in the same language as the product description (max 6 words)"
 }`,
               },
             ],
