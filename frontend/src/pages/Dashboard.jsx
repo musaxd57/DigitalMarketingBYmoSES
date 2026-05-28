@@ -86,11 +86,33 @@ export default function Dashboard() {
   const handleSeedDemo = async () => {
     setSeeding(true);
     try {
-      await demoAPI.seed();
-      await fetchData();
+      const res = await demoAPI.seed();
+      // If already seeded or sync success
+      if (res.data?.status === 'completed' || res.data?.seeded === false) {
+        await fetchData();
+        setSeeding(false);
+        return;
+      }
+      // 202 async — poll status
+      const poll = setInterval(async () => {
+        try {
+          const statusRes = await demoAPI.status();
+          const { status } = statusRes.data;
+          if (status === 'completed') {
+            clearInterval(poll);
+            await fetchData();
+            setSeeding(false);
+          } else if (status === 'failed') {
+            clearInterval(poll);
+            alert('Demo veri yüklenemedi: ' + (statusRes.data.error || 'Bilinmeyen hata'));
+            setSeeding(false);
+          }
+        } catch { /* keep polling */ }
+      }, 3000);
+      // Safety timeout 3 min
+      setTimeout(() => { clearInterval(poll); setSeeding(false); }, 180000);
     } catch (err) {
       alert('Demo veri yüklenemedi: ' + (err.response?.data?.error || err.message));
-    } finally {
       setSeeding(false);
     }
   };

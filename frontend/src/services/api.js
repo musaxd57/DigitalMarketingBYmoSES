@@ -153,7 +153,8 @@ export const aiAPI = {
 
 // ─── Demo API ─────────────────────────────────────────────────────────────────
 export const demoAPI = {
-  seed: () => api.post('/demo/seed', {}, { timeout: 60000 }),
+  seed: () => api.post('/demo/seed', {}, { timeout: 15000 }),
+  status: () => api.get('/demo/status'),
   clear: () => api.delete('/demo/clear'),
 };
 
