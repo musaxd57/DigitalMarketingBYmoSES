@@ -84,7 +84,6 @@ class VideoPipeline {
             n: 1,
             size: '1024x1024',
             quality: 'standard',
-            response_format: 'b64_json',
           },
           {
             headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
@@ -97,15 +96,14 @@ class VideoPipeline {
         throw new Error(`DALL-E step failed (${dalleErr.response?.status}): ${detail}`);
       }
 
-      const imgBase64 = `data:image/png;base64,${dalleRes.data.data[0].b64_json}`;
-      const imageUrl = 'dalle-generated';
-      console.log('[VideoPipeline] Step 2 done. Image size (base64 chars):', imgBase64.length);
+      const imageUrl = dalleRes.data.data[0].url;
+      console.log('[VideoPipeline] Step 2 done. Image URL obtained.');
 
       // ── Step 3: Runway ML image-to-video ─────────────────────────────────────
       console.log('[VideoPipeline] Step 3: Sending to Runway ML...');
       const runwayPayload = {
         model: 'gen3a_turbo',
-        promptImage: imgBase64,
+        promptImage: imageUrl,
         promptText: prompts.motionPrompt,
         duration: 5,
         ratio: aspectRatio === '9:16' ? '768:1280' : '1280:768',
