@@ -51,6 +51,7 @@ app.use(cors({
     if (
       origin.endsWith('.netlify.app') ||
       origin.endsWith('.onrender.com') ||
+      origin.endsWith('.vercel.app') ||
       origin === 'http://localhost:3000' ||
       origin === 'http://localhost:5173'
     ) {
