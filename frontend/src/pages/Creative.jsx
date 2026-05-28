@@ -13,7 +13,7 @@ export default function Creative() {
   // Ad Copy state
   const [copyForm, setCopyForm] = useState({
     brandName: '', productDescription: '', targetAudience: '',
-    tone: 'persuasive', platform: 'meta', variants: 3,
+    tone: 'persuasive', platform: 'meta', variants: 3, language: 'tr',
   });
   const [generatingCopy, setGeneratingCopy] = useState(false);
   const [copyResults, setCopyResults] = useState(null);
@@ -190,22 +190,22 @@ export default function Creative() {
       {activeTab === 0 && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           <div className="bg-[#111118] rounded-xl border border-white/5 p-5 space-y-4">
-            <h2 className="text-white font-semibold text-sm">Generate Ad Copy</h2>
+            <h2 className="text-white font-semibold text-sm">Reklam Metni Oluştur</h2>
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
-                <label className={labelClass}>Brand Name *</label>
-                <input className={inputClass} placeholder="e.g. Acme Co." value={copyForm.brandName}
+                <label className={labelClass}>Marka Adı *</label>
+                <input className={inputClass} placeholder="örn. Briva" value={copyForm.brandName}
                   onChange={(e) => setCopyForm((f) => ({ ...f, brandName: e.target.value }))} />
               </div>
               <div className="col-span-2">
-                <label className={labelClass}>Product / Service Description *</label>
-                <textarea rows={3} className={inputClass} placeholder="Describe what you're advertising..."
+                <label className={labelClass}>Ürün / Hizmet Açıklaması *</label>
+                <textarea rows={3} className={inputClass} placeholder="Ne reklamını yapıyorsunuz?"
                   value={copyForm.productDescription}
                   onChange={(e) => setCopyForm((f) => ({ ...f, productDescription: e.target.value }))} />
               </div>
               <div className="col-span-2">
-                <label className={labelClass}>Target Audience</label>
-                <input className={inputClass} placeholder="e.g. Fitness enthusiasts 25-40"
+                <label className={labelClass}>Hedef Kitle</label>
+                <input className={inputClass} placeholder="örn. 25-40 yaş toptan satıcılar"
                   value={copyForm.targetAudience}
                   onChange={(e) => setCopyForm((f) => ({ ...f, targetAudience: e.target.value }))} />
               </div>
@@ -219,21 +219,29 @@ export default function Creative() {
                 </select>
               </div>
               <div>
-                <label className={labelClass}>Tone</label>
+                <label className={labelClass}>Ton</label>
                 <select className={inputClass} value={copyForm.tone}
                   onChange={(e) => setCopyForm((f) => ({ ...f, tone: e.target.value }))}>
-                  <option value="persuasive">Persuasive</option>
-                  <option value="urgent">Urgent</option>
-                  <option value="casual">Casual</option>
-                  <option value="professional">Professional</option>
-                  <option value="funny">Funny/Humorous</option>
+                  <option value="persuasive">İkna Edici</option>
+                  <option value="urgent">Aciliyet</option>
+                  <option value="casual">Samimi</option>
+                  <option value="professional">Profesyonel</option>
+                  <option value="funny">Esprili</option>
                 </select>
               </div>
               <div>
-                <label className={labelClass}>Variants</label>
+                <label className={labelClass}>Varyant Sayısı</label>
                 <select className={inputClass} value={copyForm.variants}
                   onChange={(e) => setCopyForm((f) => ({ ...f, variants: parseInt(e.target.value) }))}>
-                  {[2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} variants</option>)}
+                  {[2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} varyant</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Dil / Language</label>
+                <select className={inputClass} value={copyForm.language}
+                  onChange={(e) => setCopyForm((f) => ({ ...f, language: e.target.value }))}>
+                  <option value="tr">Türkçe</option>
+                  <option value="en">English</option>
                 </select>
               </div>
             </div>
@@ -243,8 +251,8 @@ export default function Creative() {
               className="w-full py-2.5 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/30 text-[#00ff88] font-medium text-sm hover:bg-[#00ff88]/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {generatingCopy ? (
-                <><div className="w-4 h-4 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin" /> Generating...</>
-              ) : '⚡ Generate Ad Copy'}
+                <><div className="w-4 h-4 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin" /> Oluşturuluyor...</>
+              ) : '⚡ Reklam Metni Oluştur'}
             </button>
           </div>
 
@@ -253,38 +261,38 @@ export default function Creative() {
             {generatingCopy && (
               <div className="bg-[#111118] rounded-xl border border-white/5 p-10 flex flex-col items-center gap-3">
                 <div className="w-10 h-10 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin" />
-                <p className="text-[#555] text-sm">GPT-4 is crafting your ad copy...</p>
+                <p className="text-[#555] text-sm">Reklam metni hazırlanıyor...</p>
               </div>
             )}
             {copyResults?.variants?.map((v) => (
               <div key={v.variant} className="bg-[#111118] rounded-xl border border-white/5 p-5 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[#00ff88] text-xs font-mono">VARIANT {v.variant}</span>
+                  <span className="text-[#00ff88] text-xs font-mono">VARYANT {v.variant}</span>
                   {v.uniqueAngle && (
                     <span className="text-[#555] text-xs bg-white/5 px-2 py-0.5 rounded">{v.uniqueAngle}</span>
                   )}
                 </div>
                 {v.headline && (
                   <div>
-                    <p className="text-[#444] text-xs font-mono mb-1">HEADLINE</p>
+                    <p className="text-[#444] text-xs font-mono mb-1">BAŞLIK</p>
                     <p className="text-white font-semibold">{v.headline}</p>
                   </div>
                 )}
                 {v.hook && (
                   <div>
-                    <p className="text-[#444] text-xs font-mono mb-1">HOOK (3s)</p>
+                    <p className="text-[#444] text-xs font-mono mb-1">KANCA (3sn)</p>
                     <p className="text-[#00ff88] text-sm italic">"{v.hook}"</p>
                   </div>
                 )}
                 {v.primaryText && (
                   <div>
-                    <p className="text-[#444] text-xs font-mono mb-1">BODY COPY</p>
+                    <p className="text-[#444] text-xs font-mono mb-1">ANA METİN</p>
                     <p className="text-[#888] text-sm leading-relaxed">{v.primaryText}</p>
                   </div>
                 )}
                 {v.callToAction && (
                   <div className="flex items-center gap-2">
-                    <span className="text-[#444] text-xs font-mono">CTA:</span>
+                    <span className="text-[#444] text-xs font-mono">EYLEM:</span>
                     <span className="bg-[#00ff88]/10 text-[#00ff88] text-xs px-2 py-0.5 rounded border border-[#00ff88]/20">
                       {v.callToAction}
                     </span>
@@ -296,7 +304,7 @@ export default function Creative() {
                   )}
                   className="text-[#444] text-xs hover:text-[#888] transition-colors"
                 >
-                  Copy to clipboard
+                  Kopyala
                 </button>
               </div>
             ))}

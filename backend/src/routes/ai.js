@@ -29,6 +29,7 @@ router.post('/ad-copy', authenticate, aiLimiter, async (req, res) => {
     tone = 'persuasive',
     platform = 'meta',
     variants = 3,
+    language = 'tr',
     campaignId,
   } = req.body;
 
@@ -51,10 +52,15 @@ router.post('/ad-copy', authenticate, aiLimiter, async (req, res) => {
         tiktok: 'TikTok ad. Hook in first 3 seconds, energetic, conversational, include trending language.',
       };
 
+      const langInstruction = language === 'tr'
+        ? 'IMPORTANT: Write ALL ad copy content in Turkish language.'
+        : 'Write ALL ad copy content in English.';
+
       const systemPrompt = `You are an expert digital advertising copywriter with 10+ years creating high-converting ad copy.
 Generate ${variants} distinct ad copy variants for ${platform} ads.
 Platform specs: ${platformGuidance[platform] || platformGuidance.meta}
 Tone: ${tone}
+${langInstruction}
 Return a JSON object with key "variants" containing exactly ${variants} objects, each having:
 { "variant": number, "headline": "...", "primaryText": "...", "description": "...", "callToAction": "...", "hook": "...", "uniqueAngle": "..." }`;
 
