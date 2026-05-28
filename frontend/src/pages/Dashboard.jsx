@@ -94,8 +94,8 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-white text-xl font-semibold">Dashboard</h1>
-          <p className="text-[#555] text-sm mt-0.5">Real-time performance overview</p>
+          <h1 className="text-white text-xl font-semibold">Ana Sayfa</h1>
+          <p className="text-[#555] text-sm mt-0.5">Gerçek zamanlı performans özeti</p>
         </div>
         <div className="flex items-center gap-2">
           {['7d', '14d', '30d', '90d'].map((r) => (
@@ -125,7 +125,7 @@ export default function Dashboard() {
           accentColor="#00ff88"
         />
         <KPICard
-          title="Total Spend"
+          title="Toplam Harcama"
           value={metrics.totalSpend}
           change={changes.spend}
           format="currency"
@@ -133,7 +133,7 @@ export default function Dashboard() {
           accentColor="#00aaff"
         />
         <KPICard
-          title="Revenue"
+          title="Gelir"
           value={metrics.totalRevenue}
           format="currency"
           loading={loading}
@@ -156,7 +156,7 @@ export default function Dashboard() {
           accentColor="#ff8c00"
         />
         <KPICard
-          title="Conversions"
+          title="Dönüşümler"
           value={metrics.totalConversions}
           change={changes.conversions}
           format="integer"
@@ -170,11 +170,11 @@ export default function Dashboard() {
         {/* Main chart - Spend & ROAS over time */}
         <div className="xl:col-span-2 bg-[#111118] rounded-xl border border-white/5 p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-white font-semibold text-sm">Spend & ROAS Trend</h2>
+            <h2 className="text-white font-semibold text-sm">Harcama & ROAS Trendi</h2>
             <div className="flex items-center gap-3 text-xs">
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-0.5 bg-[#00aaff]" />
-                <span className="text-[#666]">Spend</span>
+                <span className="text-[#666]">Harcama</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-0.5 bg-[#00ff88]" />
@@ -235,12 +235,12 @@ export default function Dashboard() {
 
         {/* Platform breakdown */}
         <div className="bg-[#111118] rounded-xl border border-white/5 p-5">
-          <h2 className="text-white font-semibold text-sm mb-4">Spend by Platform</h2>
+          <h2 className="text-white font-semibold text-sm mb-4">Platforma Göre Harcama</h2>
           {loading ? (
             <div className="h-48 bg-white/3 animate-pulse rounded-lg" />
           ) : platformBreakdown.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-[#444] text-sm">
-              No data available
+              Veri yok
             </div>
           ) : (
             <>
@@ -285,7 +285,7 @@ export default function Dashboard() {
 
       {/* CTR + Conversions chart */}
       <div className="bg-[#111118] rounded-xl border border-white/5 p-5">
-        <h2 className="text-white font-semibold text-sm mb-4">CTR & Conversions (Last {dateRange})</h2>
+        <h2 className="text-white font-semibold text-sm mb-4">CTR & Dönüşümler (Son {dateRange})</h2>
         {loading ? (
           <div className="h-32 bg-white/3 animate-pulse rounded-lg" />
         ) : (
@@ -323,9 +323,9 @@ export default function Dashboard() {
       {/* Recent Campaigns Table */}
       <div className="bg-[#111118] rounded-xl border border-white/5 overflow-hidden">
         <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
-          <h2 className="text-white font-semibold text-sm">Recent Campaigns</h2>
+          <h2 className="text-white font-semibold text-sm">Son Kampanyalar</h2>
           <a href="/campaigns" className="text-[#00ff88] text-xs hover:underline font-mono">
-            View all →
+            Tümünü gör →
           </a>
         </div>
         <div className="overflow-x-auto">
@@ -337,14 +337,14 @@ export default function Dashboard() {
             </div>
           ) : campaigns.length === 0 ? (
             <div className="p-10 text-center">
-              <p className="text-[#444] text-sm">No campaigns yet</p>
-              <p className="text-[#333] text-xs mt-1">Connect an ad account to sync campaigns</p>
+              <p className="text-[#444] text-sm">Henüz kampanya yok</p>
+              <p className="text-[#333] text-xs mt-1">Kampanyaları görmek için bir reklam hesabı bağla</p>
             </div>
           ) : (
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/5">
-                  {['Campaign', 'Platform', 'Status', 'Spend', 'ROAS', 'CTR', 'Conversions'].map((h) => (
+                  {['Kampanya', 'Platform', 'Durum', 'Harcama', 'ROAS', 'CTR', 'Dönüşüm'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-[#444] text-xs font-mono">{h}</th>
                   ))}
                 </tr>

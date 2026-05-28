@@ -4,7 +4,7 @@ import { useAuth } from '../App';
 const NAV_ITEMS = [
   {
     path: '/',
-    label: 'Dashboard',
+    label: 'Ana Sayfa',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   },
   {
     path: '/analytics',
-    label: 'Analytics',
+    label: 'Analitik',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -24,7 +24,7 @@ const NAV_ITEMS = [
   },
   {
     path: '/campaigns',
-    label: 'Campaigns',
+    label: 'Kampanyalar',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -36,7 +36,7 @@ const NAV_ITEMS = [
   },
   {
     path: '/creative',
-    label: 'Creative Studio',
+    label: 'Kreatif Stüdyo',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -46,7 +46,7 @@ const NAV_ITEMS = [
   },
   {
     path: '/trends',
-    label: 'Trend Engine',
+    label: 'Trend Motoru',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -57,7 +57,7 @@ const NAV_ITEMS = [
   },
   {
     path: '/settings',
-    label: 'Settings',
+    label: 'Ayarlar',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -147,7 +147,7 @@ export default function Sidebar() {
 
       {/* Platform status indicators */}
       <div className="px-4 py-3 border-t border-white/5">
-        <p className="text-[#444] text-xs font-mono uppercase tracking-wider mb-2">Platforms</p>
+        <p className="text-[#444] text-xs font-mono uppercase tracking-wider mb-2">Platformlar</p>
         <div className="space-y-1.5">
           {[
             { name: 'Meta Ads', color: '#1877f2' },
@@ -179,7 +179,7 @@ export default function Sidebar() {
           <button
             onClick={handleLogout}
             className="text-[#555] hover:text-red-400 transition-colors"
-            title="Logout"
+            title="Çıkış Yap"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
