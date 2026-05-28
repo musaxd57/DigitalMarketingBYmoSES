@@ -85,15 +85,16 @@ Respond with this exact JSON:
       }
 
       // ── Step 2: Generate image with DALL-E 3 ─────────────────────────────────
+      console.log('[VideoPipeline] Step 2: Generating DALL-E 3 image...');
       const dalleRes = await axios.post(
         'https://api.openai.com/v1/images/generate',
         {
           model: 'dall-e-3',
-          prompt: `${prompts.imagePrompt}. Professional advertising photography, high quality, 4K.`,
+          prompt: `${prompts.imagePrompt}. Professional advertising photography, high quality.`,
           n: 1,
-          size: aspectRatio === '9:16' ? '1024x1792' : '1792x1024',
+          size: '1024x1024',
           quality: 'standard',
-          response_format: 'url',
+          response_format: 'b64_json',
         },
         {
           headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
@@ -101,13 +102,12 @@ Respond with this exact JSON:
         }
       );
 
-      const imageUrl = dalleRes.data.data[0].url;
-
-      // Download image and convert to base64 — Runway can't access OpenAI temporary URLs
-      const imgRes = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 30000 });
-      const imgBase64 = `data:image/png;base64,${Buffer.from(imgRes.data).toString('base64')}`;
+      const imgBase64 = `data:image/png;base64,${dalleRes.data.data[0].b64_json}`;
+      const imageUrl = 'dalle-generated';
+      console.log('[VideoPipeline] Step 2 done. Image size (base64 chars):', imgBase64.length);
 
       // ── Step 3: Runway ML image-to-video ─────────────────────────────────────
+      console.log('[VideoPipeline] Step 3: Sending to Runway ML...');
       const runwayPayload = {
         model: 'gen3a_turbo',
         promptImage: imgBase64,
@@ -116,20 +116,28 @@ Respond with this exact JSON:
         ratio: aspectRatio === '9:16' ? '768:1280' : '1280:768',
       };
 
-      const runwayRes = await axios.post(
-        `${this.runwayBase}/image_to_video`,
-        runwayPayload,
-        {
-          headers: {
-            Authorization: `Bearer ${this.runwayKey}`,
-            'Content-Type': 'application/json',
-            'X-Runway-Version': '2024-11-06',
-          },
-          timeout: 30000,
-        }
-      );
-
-      const taskId = runwayRes.data.id;
+      let runwayRes;
+      try {
+        runwayRes = await axios.post(
+          `${this.runwayBase}/image_to_video`,
+          runwayPayload,
+          {
+            headers: {
+              Authorization: `Bearer ${this.runwayKey}`,
+              'Content-Type': 'application/json',
+              'X-Runway-Version': '2024-11-06',
+            },
+            timeout: 60000,
+            maxContentLength: 50 * 1024 * 1024,
+            maxBodyLength: 50 * 1024 * 1024,
+          }
+        );
+      } catch (runwayErr) {
+        const detail = JSON.stringify(runwayErr.response?.data || runwayErr.message);
+        console.error('[VideoPipeline] Runway error:', runwayErr.response?.status, detail);
+        throw new Error(`Runway API ${runwayErr.response?.status || 'network'}: ${detail}`);
+      }
+      console.log('[VideoPipeline] Step 3 done. Task ID:', runwayRes.data.id);
 
       // ── Step 4: Poll Runway task until done ───────────────────────────────────
       const videoUrl = await this._pollRunwayTask(taskId);
