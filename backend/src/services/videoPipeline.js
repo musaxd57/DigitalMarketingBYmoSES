@@ -103,14 +103,17 @@ Respond with this exact JSON:
 
       const imageUrl = dalleRes.data.data[0].url;
 
+      // Download image and convert to base64 — Runway can't access OpenAI temporary URLs
+      const imgRes = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 30000 });
+      const imgBase64 = `data:image/png;base64,${Buffer.from(imgRes.data).toString('base64')}`;
+
       // ── Step 3: Runway ML image-to-video ─────────────────────────────────────
       const runwayPayload = {
         model: 'gen3a_turbo',
-        promptImage: imageUrl,
+        promptImage: imgBase64,
         promptText: prompts.motionPrompt,
-        duration: duration <= 5 ? 5 : 10,
+        duration: 5,
         ratio: aspectRatio === '9:16' ? '768:1280' : '1280:768',
-        watermark: false,
       };
 
       const runwayRes = await axios.post(
