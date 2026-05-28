@@ -119,7 +119,7 @@ Return ONLY valid JSON with these exact keys:
       let promptImage;
 
       try {
-        const enhancedImagePrompt = `${prompts.imagePrompt}. Commercial advertising photography, ultra-high resolution, sharp focus throughout, professional color grading, no text, no watermarks, no people unless specified, photorealistic.`;
+        const enhancedImagePrompt = `${prompts.imagePrompt}. Clean minimal background, isolated product shot, no busy environments, no distracting elements, seamless studio backdrop, commercial advertising photography, ultra-high resolution, sharp focus, professional color grading, no text, no watermarks, no people, photorealistic.`;
 
         const dalleRes = await axios.post(
           'https://api.openai.com/v1/images/generations',
@@ -151,7 +151,7 @@ Return ONLY valid JSON with these exact keys:
 
       // ── Step 3: Runway Gen-4 Turbo Image-to-Video ────────────────────────────
       console.log('[VideoPipeline] Step 3: Runway Gen-4 Turbo video generation...');
-      const enhancedMotionPrompt = `${prompts.motionPrompt} Photorealistic, cinematic quality, smooth professional motion, premium advertising production value, no artifacts, no flickering.`;
+        const enhancedMotionPrompt = `${prompts.motionPrompt} Focus only on the product, do not animate or change the background, keep background static and clean, smooth professional camera movement only, photorealistic, cinematic quality, no artifacts, no flickering, no AI-looking distortions.`;
 
       let runwayRes;
       try {
@@ -163,9 +163,10 @@ Return ONLY valid JSON with these exact keys:
           ratio: runwayRatio,
         };
 
-        if (prompts.negativePrompt) {
-          runwayPayload.negativePrompt = prompts.negativePrompt;
-        }
+        const baseNegative = 'AI-looking, CGI, unrealistic, busy background, cluttered environment, distorted, morphing, melting, glitching, artifacts, flickering, watermark, text overlay, multiple products';
+        runwayPayload.negativePrompt = prompts.negativePrompt
+          ? `${baseNegative}, ${prompts.negativePrompt}`
+          : baseNegative;
 
         runwayRes = await axios.post(
           `${this.runwayBase}/image_to_video`,
