@@ -3,7 +3,7 @@ import {
   LineChart, Line, AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { analyticsAPI, campaignsAPI } from '../services/api';
+import { analyticsAPI, campaignsAPI, demoAPI } from '../services/api';
 import KPICard from '../components/KPICard';
 import { format, subDays } from 'date-fns';
 
@@ -53,6 +53,7 @@ export default function Dashboard() {
   const [platformBreakdown, setPlatformBreakdown] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('30d');
+  const [seeding, setSeeding] = useState(false);
 
   const getDateRange = () => {
     const end = format(new Date(), 'yyyy-MM-dd');
@@ -61,30 +62,40 @@ export default function Dashboard() {
     return { startDate: start, endDate: end };
   };
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      const { startDate, endDate } = getDateRange();
-      try {
-        const [overviewRes, timeseriesRes, campaignsRes, platformRes] = await Promise.allSettled([
-          analyticsAPI.overview({ startDate, endDate }),
-          analyticsAPI.timeseries({ startDate, endDate }),
-          campaignsAPI.list({ limit: 5 }),
-          analyticsAPI.byPlatform({ startDate, endDate }),
-        ]);
+  const fetchData = async () => {
+    setLoading(true);
+    const { startDate, endDate } = getDateRange();
+    try {
+      const [overviewRes, timeseriesRes, campaignsRes, platformRes] = await Promise.allSettled([
+        analyticsAPI.overview({ startDate, endDate }),
+        analyticsAPI.timeseries({ startDate, endDate }),
+        campaignsAPI.list({ limit: 5 }),
+        analyticsAPI.byPlatform({ startDate, endDate }),
+      ]);
+      if (overviewRes.status === 'fulfilled') setOverview(overviewRes.value.data);
+      if (timeseriesRes.status === 'fulfilled') setTimeseries(timeseriesRes.value.data.data || []);
+      if (campaignsRes.status === 'fulfilled') setCampaigns(campaignsRes.value.data.campaigns || []);
+      if (platformRes.status === 'fulfilled') setPlatformBreakdown(platformRes.value.data.breakdown || []);
+    } catch (err) {
+      console.error('[Dashboard] Fetch error:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        if (overviewRes.status === 'fulfilled') setOverview(overviewRes.value.data);
-        if (timeseriesRes.status === 'fulfilled') setTimeseries(timeseriesRes.value.data.data || []);
-        if (campaignsRes.status === 'fulfilled') setCampaigns(campaignsRes.value.data.campaigns || []);
-        if (platformRes.status === 'fulfilled') setPlatformBreakdown(platformRes.value.data.breakdown || []);
-      } catch (err) {
-        console.error('[Dashboard] Fetch error:', err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [dateRange]);
+  const handleSeedDemo = async () => {
+    setSeeding(true);
+    try {
+      await demoAPI.seed();
+      await fetchData();
+    } catch (err) {
+      alert('Demo veri yüklenemedi: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, [dateRange]);
 
   const metrics = overview?.metrics || {};
   const changes = overview?.changes || {};
@@ -111,6 +122,14 @@ export default function Dashboard() {
               {r}
             </button>
           ))}
+          <button
+            onClick={handleSeedDemo}
+            disabled={seeding}
+            className="px-3 py-1.5 rounded-lg text-xs font-mono transition-all text-[#ffd700] border border-[#ffd700]/20 hover:bg-[#ffd700]/10 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {seeding ? <span className="w-3 h-3 border border-[#ffd700] border-t-transparent rounded-full animate-spin inline-block" /> : '✦'}
+            {seeding ? 'Yükleniyor...' : 'Demo Veri'}
+          </button>
         </div>
       </div>
 

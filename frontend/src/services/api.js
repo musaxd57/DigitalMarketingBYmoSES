@@ -151,6 +151,12 @@ export const aiAPI = {
   getGenerations: (params) => api.get('/ai/generations', { params }),
 };
 
+// ─── Demo API ─────────────────────────────────────────────────────────────────
+export const demoAPI = {
+  seed: () => api.post('/demo/seed', {}, { timeout: 60000 }),
+  clear: () => api.delete('/demo/clear'),
+};
+
 // ─── Trends API ───────────────────────────────────────────────────────────────
 export const trendsAPI = {
   list: () => api.get('/trends'),
