@@ -79,11 +79,10 @@ class VideoPipeline {
         dalleRes = await axios.post(
           'https://api.openai.com/v1/images/generations',
           {
-            model: 'dall-e-3',
+            model: 'dall-e-2',
             prompt: `${prompts.imagePrompt}. Professional advertising photography, high quality.`,
             n: 1,
             size: '1024x1024',
-            quality: 'standard',
           },
           {
             headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
