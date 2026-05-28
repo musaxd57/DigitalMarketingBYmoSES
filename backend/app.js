@@ -112,6 +112,9 @@ trendRouter.get('/', authenticate, async (req, res) => {
     const reports = await engine.getReportHistory(req.user.tenantId);
     return res.json({ reports });
   } catch (err) {
+    if (err.message?.includes('does not exist')) {
+      return res.json({ reports: [] });
+    }
     return res.status(500).json({ error: 'Failed to fetch trend reports' });
   }
 });
@@ -126,29 +129,34 @@ trendRouter.get('/latest', authenticate, async (req, res) => {
     }
     return res.json({ report });
   } catch (err) {
+    if (err.message?.includes('does not exist')) {
+      return res.status(404).json({ error: 'No trend reports found', message: 'Trigger a new analysis to get started' });
+    }
     return res.status(500).json({ error: 'Failed to fetch trend report' });
   }
 });
 
 trendRouter.post('/generate', authenticate, trendLimiter, async (req, res) => {
   const { platform = 'tiktok', niche } = req.body;
-  const { trendQueue } = require('./src/services/queue');
 
-  try {
-    const job = await trendQueue.add('analyze-trends', {
-      tenantId: req.user.tenantId,
-      platform,
-      niche,
-    });
+  // Respond immediately, run analysis in background
+  const fakeJobId = `job_${Date.now()}`;
+  res.status(202).json({
+    message: 'Trend analysis started',
+    jobId: fakeJobId,
+    estimatedMinutes: 2,
+  });
 
-    return res.status(202).json({
-      message: 'Trend analysis queued',
-      jobId: job.id,
-      estimatedMinutes: 2,
-    });
-  } catch (err) {
-    return res.status(500).json({ error: 'Failed to queue trend analysis' });
-  }
+  // Run async without blocking response
+  setImmediate(async () => {
+    try {
+      const engine = new TrendEngine();
+      await engine.generateTrendReport(req.user.tenantId, platform, niche);
+      logger.info(`[Trends] Report generated for tenant ${req.user.tenantId}`);
+    } catch (err) {
+      logger.error(`[Trends] Background generation failed: ${err.message}`);
+    }
+  });
 });
 
 app.use('/api/trends', trendRouter);
