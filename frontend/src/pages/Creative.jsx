@@ -29,7 +29,7 @@ export default function Creative() {
   const copyPollRef = useRef(null);
 
   // Voiceover state
-  const [voiceForm, setVoiceForm] = useState({ text: '', voiceId: '21m00Tcm4TlvDq8ikWAM', modelId: 'eleven_turbo_v2_5' });
+  const [voiceForm, setVoiceForm] = useState({ text: '', voice: 'nova', model: 'tts-1' });
   const [generatingVoice, setGeneratingVoice] = useState(false);
   const [audioResult, setAudioResult] = useState(null);
   const voicePollRef = useRef(null);
@@ -459,35 +459,34 @@ export default function Creative() {
       {activeTab === 2 && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           <div className="bg-[#111118] rounded-xl border border-white/5 p-5 space-y-4">
-            <h2 className="text-white font-semibold text-sm">Generate Voiceover</h2>
-            <p className="text-[#555] text-xs">Powered by ElevenLabs — high-quality, natural-sounding speech</p>
+            <h2 className="text-white font-semibold text-sm">Seslendirme Oluştur</h2>
+            <p className="text-[#555] text-xs">OpenAI TTS ile desteklenmektedir — doğal, yüksek kaliteli ses</p>
             <div>
               <label className={labelClass}>Script Text *</label>
               <textarea rows={6} className={inputClass}
-                placeholder="Enter the voiceover script here... (max 5000 chars)"
+                placeholder="Seslendirme metnini buraya yaz... (max 4096 karakter)"
                 value={voiceForm.text}
                 onChange={(e) => setVoiceForm((f) => ({ ...f, text: e.target.value }))} />
-              <p className="text-[#333] text-xs mt-1">{voiceForm.text.length}/5000</p>
+              <p className="text-[#333] text-xs mt-1">{voiceForm.text.length}/4096</p>
             </div>
             <div>
               <label className={labelClass}>Ses / Voice</label>
-              <select className={inputClass} value={voiceForm.voiceId}
-                onChange={(e) => setVoiceForm((f) => ({ ...f, voiceId: e.target.value }))}>
-                <option value="21m00Tcm4TlvDq8ikWAM">Rachel (Kadın, Amerikan)</option>
-                <option value="AZnzlk1XvdvUeBnXmlld">Domi (Kadın, Amerikan)</option>
-                <option value="EXAVITQu4vr4xnSDxMaL">Bella (Kadın, Amerikan)</option>
-                <option value="ErXwobaYiN019PkySvjV">Antoni (Erkek, Amerikan)</option>
-                <option value="VR6AewLTigWG4xSOukaG">Arnold (Erkek, Amerikan)</option>
-                <option value="pNInz6obpgDQGcFmaJgB">Adam (Erkek, Amerikan)</option>
+              <select className={inputClass} value={voiceForm.voice}
+                onChange={(e) => setVoiceForm((f) => ({ ...f, voice: e.target.value }))}>
+                <option value="nova">Nova (Kadın, doğal)</option>
+                <option value="alloy">Alloy (Nötr)</option>
+                <option value="echo">Echo (Erkek)</option>
+                <option value="fable">Fable (Erkek, İngiliz)</option>
+                <option value="onyx">Onyx (Erkek, derin)</option>
+                <option value="shimmer">Shimmer (Kadın, yumuşak)</option>
               </select>
             </div>
             <div>
-              <label className={labelClass}>Model</label>
-              <select className={inputClass} value={voiceForm.modelId}
-                onChange={(e) => setVoiceForm((f) => ({ ...f, modelId: e.target.value }))}>
-                <option value="eleven_turbo_v2_5">Turbo v2.5 (Ücretsiz plan)</option>
-                <option value="eleven_flash_v2_5">Flash v2.5 (En hızlı, Ücretsiz)</option>
-                <option value="eleven_multilingual_v2">Multilingual v2 (Ücretli plan gerekli)</option>
+              <label className={labelClass}>Kalite</label>
+              <select className={inputClass} value={voiceForm.model}
+                onChange={(e) => setVoiceForm((f) => ({ ...f, model: e.target.value }))}>
+                <option value="tts-1">Standart (Hızlı)</option>
+                <option value="tts-1-hd">HD (Yüksek kalite)</option>
               </select>
             </div>
             <button
@@ -496,8 +495,8 @@ export default function Creative() {
               className="w-full py-2.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 font-medium text-sm hover:bg-blue-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {generatingVoice ? (
-                <><div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" /> Generating...</>
-              ) : '🎙️ Generate Voiceover'}
+                <><div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" /> Oluşturuluyor...</>
+              ) : '🎙️ Seslendirme Oluştur'}
             </button>
           </div>
 

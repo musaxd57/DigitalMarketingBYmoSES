@@ -223,58 +223,43 @@ router.get('/video/status/:jobId', authenticate, async (req, res) => {
 });
 
 // ─── POST /api/ai/voiceover ───────────────────────────────────────────────────
-// Async voiceover generation — responds immediately with jobId, runs ElevenLabs in background
+// Async voiceover using OpenAI TTS — same API key as ad copy, no extra setup
 router.post('/voiceover', authenticate, aiLimiter, async (req, res) => {
   const {
     text,
-    voiceId = config.elevenlabs.defaultVoiceId,
-    modelId = 'eleven_turbo_v2_5',
-    stability = 0.5,
-    similarityBoost = 0.75,
-    style = 0.0,
-    useSpeakerBoost = true,
+    voice = 'nova',
+    model = 'tts-1',
+    speed = 1.0,
   } = req.body;
 
   if (!text || text.length < 10) {
     return res.status(400).json({ error: 'text is required (min 10 characters)' });
   }
-  if (text.length > 5000) {
-    return res.status(400).json({ error: 'text exceeds 5000 character limit' });
+  if (text.length > 4096) {
+    return res.status(400).json({ error: 'text exceeds 4096 character limit' });
   }
 
   const jobId = randomUUID();
   voiceoverJobs.set(jobId, { status: 'processing', createdAt: Date.now() });
 
-  // Respond immediately
   res.status(202).json({ generationId: jobId, status: 'processing' });
 
-  // Run ElevenLabs in background
   setImmediate(async () => {
     try {
-      const elevenRes = await axios.post(
-        `${config.elevenlabs.baseUrl}/text-to-speech/${voiceId}`,
-        {
-          text,
-          model_id: modelId,
-          voice_settings: {
-            stability,
-            similarity_boost: similarityBoost,
-            style,
-            use_speaker_boost: useSpeakerBoost,
-          },
-        },
+      const ttsRes = await axios.post(
+        'https://api.openai.com/v1/audio/speech',
+        { model, input: text, voice, speed, response_format: 'mp3' },
         {
           headers: {
-            'xi-api-key': config.elevenlabs.apiKey,
+            Authorization: `Bearer ${config.openai.apiKey}`,
             'Content-Type': 'application/json',
-            Accept: 'audio/mpeg',
           },
           responseType: 'arraybuffer',
-          timeout: 120000,
+          timeout: 60000,
         }
       );
 
-      const audioBase64 = Buffer.from(elevenRes.data).toString('base64');
+      const audioBase64 = Buffer.from(ttsRes.data).toString('base64');
       const audioDataUrl = `data:audio/mpeg;base64,${audioBase64}`;
 
       voiceoverJobs.set(jobId, {
@@ -284,30 +269,21 @@ router.post('/voiceover', authenticate, aiLimiter, async (req, res) => {
         createdAt: Date.now(),
       });
 
-      // Best-effort DB save
       pool.query(
         `INSERT INTO ai_generations
            (tenant_id, user_id, type, status, input_data, model_used, job_completed_at)
-         VALUES ($1, $2, 'voiceover', 'completed', $3, 'elevenlabs', NOW())`,
-        [req.user.tenantId, req.user.id, JSON.stringify({ text: text.substring(0, 100), voiceId, modelId })]
+         VALUES ($1, $2, 'voiceover', 'completed', $3, $4, NOW())`,
+        [req.user.tenantId, req.user.id, JSON.stringify({ text: text.substring(0, 100), voice }), model]
       ).catch((e) => console.warn('[AI] Voiceover DB save skipped:', e.message));
 
     } catch (err) {
       const status = err.response?.status;
       let errorMsg = err.message;
-      if (status === 402) {
-        errorMsg = 'ElevenLabs kredi yetersiz (402). Ücretsiz plan 10.000 karakter/ay. Planı yükselt veya aylık sıfırlamayı bekle.';
-      } else if (status === 401) {
-        errorMsg = 'ElevenLabs API anahtarı geçersiz (401). Render ortam değişkenlerini kontrol et.';
-      } else if (status === 429) {
-        errorMsg = 'ElevenLabs istek limiti aşıldı (429). Birkaç dakika sonra tekrar dene.';
-      }
-      console.error('[AI] Voiceover error:', status, err.message);
-      voiceoverJobs.set(jobId, {
-        status: 'failed',
-        error: errorMsg,
-        createdAt: Date.now(),
-      });
+      if (status === 401) errorMsg = 'OpenAI API anahtarı geçersiz. Render ortam değişkenlerini kontrol et.';
+      else if (status === 429) errorMsg = 'OpenAI rate limit aşıldı. Biraz bekle.';
+      else if (status === 402) errorMsg = 'OpenAI kredi yetersiz. Hesabına kredi ekle.';
+      console.error('[AI] Voiceover (OpenAI TTS) error:', status, err.message);
+      voiceoverJobs.set(jobId, { status: 'failed', error: errorMsg, createdAt: Date.now() });
     }
   });
 });
