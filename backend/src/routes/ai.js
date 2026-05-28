@@ -228,7 +228,7 @@ router.post('/voiceover', authenticate, aiLimiter, async (req, res) => {
   const {
     text,
     voiceId = config.elevenlabs.defaultVoiceId,
-    modelId = 'eleven_multilingual_v2',
+    modelId = 'eleven_multilingual_v1',
     stability = 0.5,
     similarityBoost = 0.75,
     style = 0.0,
