@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const { randomUUID } = require('crypto');
 const router = express.Router();
 const { pool } = require('../models/db');
 const { authenticate } = require('../middleware/auth');
@@ -8,8 +9,18 @@ const config = require('../config');
 const VideoPipeline = require('../services/videoPipeline');
 const TrendEngine = require('../services/trendEngine');
 
+// In-memory job store for ad copy (avoids DB dependency for job tracking)
+const adCopyJobs = new Map();
+// Auto-clean jobs older than 30 minutes
+setInterval(() => {
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  for (const [id, job] of adCopyJobs.entries()) {
+    if (job.createdAt < cutoff) adCopyJobs.delete(id);
+  }
+}, 5 * 60 * 1000);
+
 // ─── POST /api/ai/ad-copy ─────────────────────────────────────────────────────
-// Starts async ad copy generation — returns generationId immediately
+// Starts async ad copy generation — returns jobId immediately, no DB required
 router.post('/ad-copy', authenticate, aiLimiter, async (req, res) => {
   const {
     brandName,
@@ -25,28 +36,11 @@ router.post('/ad-copy', authenticate, aiLimiter, async (req, res) => {
     return res.status(400).json({ error: 'brandName and productDescription are required' });
   }
 
-  let generationId;
-  try {
-    const genRes = await pool.query(
-      `INSERT INTO ai_generations
-         (tenant_id, user_id, type, status, input_data, model_used)
-       VALUES ($1, $2, 'ad_copy', 'processing', $3, $4)
-       RETURNING id`,
-      [
-        req.user.tenantId,
-        req.user.id,
-        JSON.stringify({ brandName, productDescription, targetAudience, tone, platform, variants }),
-        config.openai.model,
-      ]
-    );
-    generationId = genRes.rows[0].id;
-  } catch (dbErr) {
-    console.error('[AI] DB insert error:', dbErr.message);
-    return res.status(500).json({ error: 'Database error', details: dbErr.message });
-  }
+  const jobId = randomUUID();
+  adCopyJobs.set(jobId, { status: 'processing', createdAt: Date.now() });
 
-  // Respond immediately — client will poll for results
-  res.status(202).json({ generationId, status: 'processing' });
+  // Respond immediately
+  res.status(202).json({ generationId: jobId, status: 'processing' });
 
   // Run OpenAI in background
   setImmediate(async () => {
@@ -97,69 +91,50 @@ Generate ${variants} high-converting ad copy variants.`;
         ? parsedContent
         : (parsedContent.variants || parsedContent.ad_copy || Object.values(parsedContent)[0]);
 
-      const costUsd = (usage.prompt_tokens / 1000) * 0.00015 + (usage.completion_tokens / 1000) * 0.0006;
+      adCopyJobs.set(jobId, {
+        status: 'completed',
+        variants: adCopyVariants,
+        usage: { tokens: usage.total_tokens },
+        createdAt: Date.now(),
+      });
 
-      await pool.query(
-        `UPDATE ai_generations
-         SET status = 'completed', output_data = $1, tokens_used = $2, cost_usd = $3,
-             job_completed_at = NOW(), updated_at = NOW()
-         WHERE id = $4`,
-        [JSON.stringify({ variants: adCopyVariants }), usage.total_tokens, costUsd, generationId]
-      );
+      // Best-effort DB save
+      pool.query(
+        `INSERT INTO ai_generations
+           (tenant_id, user_id, type, status, input_data, model_used, output_data, tokens_used, job_completed_at)
+         VALUES ($1, $2, 'ad_copy', 'completed', $3, $4, $5, $6, NOW())`,
+        [
+          req.user.tenantId,
+          req.user.id,
+          JSON.stringify({ brandName, productDescription, targetAudience, tone, platform, variants }),
+          config.openai.model,
+          JSON.stringify({ variants: adCopyVariants }),
+          usage.total_tokens,
+        ]
+      ).catch((e) => console.warn('[AI] DB save skipped:', e.message));
 
-      if (campaignId) {
-        for (const variant of adCopyVariants) {
-          await pool.query(
-            `INSERT INTO ad_creatives
-               (tenant_id, campaign_id, name, type, headline, primary_text, description,
-                call_to_action, generated_by_ai, ai_generation_id)
-             VALUES ($1, $2, $3, 'text', $4, $5, $6, $7, true, $8)`,
-            [
-              req.user.tenantId, campaignId,
-              `${brandName} - ${platform} Ad Variant ${variant.variant}`,
-              variant.headline, variant.primaryText,
-              variant.description, variant.callToAction, generationId,
-            ]
-          );
-        }
-      }
     } catch (err) {
-      console.error('[AI] Background ad copy error:', err.response?.data || err.message);
-      await pool.query(
-        `UPDATE ai_generations SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
-        [err.message, generationId]
-      ).catch(() => {});
+      console.error('[AI] Ad copy error:', err.response?.data || err.message);
+      adCopyJobs.set(jobId, {
+        status: 'failed',
+        error: err.response?.data?.error?.message || err.message,
+        createdAt: Date.now(),
+      });
     }
   });
 });
 
 // ─── GET /api/ai/ad-copy/status/:id ──────────────────────────────────────────
-// Poll for ad copy generation result
 router.get('/ad-copy/status/:id', authenticate, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, status, output_data, error_message, tokens_used, cost_usd
-       FROM ai_generations
-       WHERE id = $1 AND tenant_id = $2 AND type = 'ad_copy'`,
-      [req.params.id, req.user.tenantId]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Job not found' });
-    const row = result.rows[0];
-    if (row.status === 'completed') {
-      return res.json({
-        status: 'completed',
-        generationId: row.id,
-        variants: row.output_data?.variants || [],
-        usage: { tokens: row.tokens_used, costUsd: row.cost_usd },
-      });
-    }
-    if (row.status === 'failed') {
-      return res.json({ status: 'failed', error: row.error_message });
-    }
-    return res.json({ status: 'processing' });
-  } catch (err) {
-    return res.status(500).json({ error: 'Failed to get status' });
+  const job = adCopyJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found or expired' });
+  if (job.status === 'completed') {
+    return res.json({ status: 'completed', generationId: req.params.id, variants: job.variants, usage: job.usage });
   }
+  if (job.status === 'failed') {
+    return res.json({ status: 'failed', error: job.error });
+  }
+  return res.json({ status: 'processing' });
 });
 
 // ─── POST /api/ai/video ───────────────────────────────────────────────────────
