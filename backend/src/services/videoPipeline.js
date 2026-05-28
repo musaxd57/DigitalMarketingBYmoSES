@@ -66,24 +66,37 @@ class VideoPipeline {
       }
       console.log('[VideoPipeline] Step 1 done. Motion prompt:', prompts.motionPrompt);
 
-      // ── Step 2: Fetch a placeholder starting frame ────────────────────────────
-      console.log('[VideoPipeline] Step 2: Fetching starting frame image...');
-      const imgWidth = aspectRatio === '9:16' ? 576 : 1024;
-      const imgHeight = aspectRatio === '9:16' ? 1024 : 576;
-      const seed = Math.floor(Math.random() * 1000);
-
+      // ── Step 2: Generate image with DALL-E 3 ─────────────────────────────────
+      console.log('[VideoPipeline] Step 2: Generating DALL-E 3 image...');
       let promptImage;
       try {
+        const dalleRes = await axios.post(
+          'https://api.openai.com/v1/images/generations',
+          {
+            model: 'dall-e-3',
+            prompt: `${prompts.motionPrompt}. Professional advertising photography, high quality, product shot.`,
+            n: 1,
+            size: '1024x1024',
+          },
+          {
+            headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
+            timeout: 60000,
+          }
+        );
+        promptImage = dalleRes.data.data[0].url;
+        console.log('[VideoPipeline] Step 2 done. DALL-E image URL obtained.');
+      } catch (dalleErr) {
+        // Fall back to placeholder if DALL-E fails
+        console.warn('[VideoPipeline] DALL-E failed, using placeholder:', dalleErr.response?.data?.error?.message || dalleErr.message);
+        const seed = Math.floor(Math.random() * 1000);
+        const imgWidth = aspectRatio === '9:16' ? 576 : 1024;
+        const imgHeight = aspectRatio === '9:16' ? 1024 : 576;
         const imgRes = await axios.get(
           `https://picsum.photos/seed/${seed}/${imgWidth}/${imgHeight}`,
           { responseType: 'arraybuffer', timeout: 15000 }
         );
         const b64 = Buffer.from(imgRes.data).toString('base64');
         promptImage = `data:image/jpeg;base64,${b64}`;
-        console.log('[VideoPipeline] Step 2 done. Placeholder image fetched.');
-      } catch (imgErr) {
-        console.error('[VideoPipeline] Placeholder image fetch failed:', imgErr.message);
-        throw new Error(`Image fetch failed: ${imgErr.message}`);
       }
 
       // ── Step 3: Runway ML image-to-video ─────────────────────────────────────
