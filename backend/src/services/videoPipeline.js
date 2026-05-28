@@ -15,49 +15,12 @@ class VideoPipeline {
     this.runwayBase = 'https://api.runwayml.com/v1';
   }
 
-  async triggerVideoGeneration(brief) {
-    const {
-      tenantId,
-      userId,
-      brandName,
-      productDescription,
-      targetAudience,
-      videoStyle,
-      duration,
-      platform,
-      scriptDirection,
-    } = brief;
+  async runPipeline(brief) {
+    const { brandName, productDescription, targetAudience, videoStyle, platform, duration, scriptDirection, tenantId } = brief;
 
     if (!this.runwayKey) {
       throw new Error('RUNWAY_API_KEY is not configured. Please add it to your environment variables.');
     }
-
-    const genRes = await pool.query(
-      `INSERT INTO ai_generations
-         (tenant_id, user_id, type, status, input_data, model_used, job_started_at)
-       VALUES ($1, $2, 'video', 'processing', $3, 'runway-gen3', NOW())
-       RETURNING id`,
-      [
-        tenantId,
-        userId,
-        JSON.stringify({ brandName, productDescription, targetAudience, videoStyle, duration, platform, scriptDirection }),
-      ]
-    );
-    const generationId = genRes.rows[0].id;
-
-    // Fire-and-forget background execution
-    this._runPipeline(generationId, tenantId, {
-      brandName, productDescription, targetAudience,
-      videoStyle, duration, platform, scriptDirection,
-    }).catch((err) => {
-      console.error('[VideoPipeline] Background error:', err.message);
-    });
-
-    return { generationId, status: 'processing' };
-  }
-
-  async _runPipeline(generationId, tenantId, brief) {
-    const { brandName, productDescription, targetAudience, videoStyle, platform, duration, scriptDirection } = brief;
 
     try {
       // ── Step 1: Generate prompts via OpenAI ───────────────────────────────────
@@ -165,43 +128,23 @@ Respond with this exact JSON:
 
       const taskId = runwayRes.data.id;
 
-      await pool.query(
-        `UPDATE ai_generations SET n8n_execution_id = $1, updated_at = NOW() WHERE id = $2`,
-        [taskId, generationId]
-      );
-
       // ── Step 4: Poll Runway task until done ───────────────────────────────────
       const videoUrl = await this._pollRunwayTask(taskId);
 
-      await pool.query(
-        `UPDATE ai_generations
-         SET status = 'completed',
-             asset_url = $1,
-             output_data = $2,
-             job_completed_at = NOW(),
-             updated_at = NOW()
-         WHERE id = $3`,
-        [
-          videoUrl,
-          JSON.stringify({ videoUrl, imageUrl, headline: prompts.headline, motionPrompt: prompts.motionPrompt }),
-          generationId,
-        ]
-      );
+      // Optionally save creative to DB (non-blocking)
+      if (tenantId) {
+        pool.query(
+          `INSERT INTO ad_creatives (tenant_id, name, type, asset_url, thumbnail_url, generated_by_ai)
+           VALUES ($1, $2, 'video', $3, $4, true)`,
+          [tenantId, `AI Video - ${brandName}`, videoUrl, imageUrl]
+        ).catch((e) => console.warn('[VideoPipeline] Creative save skipped:', e.message));
+      }
 
-      // Save as creative asset
-      await pool.query(
-        `INSERT INTO ad_creatives
-           (tenant_id, name, type, asset_url, thumbnail_url, generated_by_ai, ai_generation_id)
-         VALUES ($1, $2, 'video', $3, $4, true, $5)`,
-        [tenantId, `AI Video - ${brief.brandName}`, videoUrl, imageUrl, generationId]
-      );
+      return { videoUrl, imageUrl, headline: prompts.headline };
     } catch (err) {
-      console.error('[VideoPipeline] Pipeline failed:', err.response?.data || err.message);
-      const errMsg = err.response?.data?.error || err.message;
-      await pool.query(
-        `UPDATE ai_generations SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
-        [errMsg, generationId]
-      );
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.message;
+      console.error('[VideoPipeline] Pipeline failed:', errMsg);
+      throw new Error(errMsg);
     }
   }
 

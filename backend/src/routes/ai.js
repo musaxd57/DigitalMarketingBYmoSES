@@ -13,6 +13,8 @@ const TrendEngine = require('../services/trendEngine');
 const adCopyJobs = new Map();
 // In-memory job store for voiceover
 const voiceoverJobs = new Map();
+// In-memory job store for video
+const videoJobs = new Map();
 
 // Auto-clean jobs older than 30 minutes
 setInterval(() => {
@@ -22,6 +24,9 @@ setInterval(() => {
   }
   for (const [id, job] of voiceoverJobs.entries()) {
     if (job.createdAt < cutoff) voiceoverJobs.delete(id);
+  }
+  for (const [id, job] of videoJobs.entries()) {
+    if (job.createdAt < cutoff) videoJobs.delete(id);
   }
 }, 5 * 60 * 1000);
 
@@ -150,7 +155,6 @@ router.get('/ad-copy/status/:id', authenticate, async (req, res) => {
 });
 
 // ─── POST /api/ai/video ───────────────────────────────────────────────────────
-// Trigger n8n video production pipeline
 router.post('/video', authenticate, aiLimiter, async (req, res) => {
   const {
     brandName,
@@ -166,61 +170,59 @@ router.post('/video', authenticate, aiLimiter, async (req, res) => {
     return res.status(400).json({ error: 'brandName and productDescription are required' });
   }
 
-  try {
-    const pipeline = new VideoPipeline();
-    const job = await pipeline.triggerVideoGeneration({
-      tenantId: req.user.tenantId,
-      userId: req.user.id,
-      brandName,
-      productDescription,
-      targetAudience,
-      videoStyle,
-      duration,
-      platform,
-      scriptDirection,
-    });
+  const jobId = randomUUID();
+  videoJobs.set(jobId, { status: 'processing', createdAt: Date.now() });
 
-    return res.status(202).json({
-      message: 'Video generation pipeline triggered',
-      jobId: job.generationId,
-      estimatedMinutes: 8,
-      statusUrl: `/api/ai/video/status/${job.generationId}`,
-    });
-  } catch (err) {
-    console.error('[AI] Video trigger error:', err.message);
-    return res.status(500).json({ error: 'Failed to trigger video generation', details: err.message });
-  }
+  res.status(202).json({
+    message: 'Video generation started',
+    jobId,
+    estimatedMinutes: 8,
+    statusUrl: `/api/ai/video/status/${jobId}`,
+  });
+
+  setImmediate(async () => {
+    try {
+      const pipeline = new VideoPipeline();
+      const result = await pipeline.runPipeline({
+        tenantId: req.user.tenantId,
+        brandName, productDescription, targetAudience,
+        videoStyle, duration, platform, scriptDirection,
+      });
+      videoJobs.set(jobId, { status: 'completed', assetUrl: result.videoUrl, imageUrl: result.imageUrl, createdAt: Date.now() });
+    } catch (err) {
+      console.error('[AI] Video pipeline error:', err.message);
+      videoJobs.set(jobId, { status: 'failed', error: err.message, createdAt: Date.now() });
+    }
+  });
 });
 
 // GET /api/ai/video/status/:jobId - poll video generation status
 router.get('/video/status/:jobId', authenticate, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, status, output_data, asset_url, error_message, job_started_at, job_completed_at
-       FROM ai_generations
-       WHERE id = $1 AND tenant_id = $2 AND type = 'video'`,
-      [req.params.jobId, req.user.tenantId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Job not found' });
+  const job = videoJobs.get(req.params.jobId);
+  if (!job) {
+    // Fall back to DB for older jobs
+    try {
+      const result = await pool.query(
+        `SELECT id, status, asset_url, error_message FROM ai_generations
+         WHERE id = $1 AND tenant_id = $2 AND type = 'video'`,
+        [req.params.jobId, req.user.tenantId]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: 'Job not found or expired' });
+      const row = result.rows[0];
+      return res.json({ jobId: row.id, status: row.status, assetUrl: row.asset_url, error: row.error_message });
+    } catch {
+      return res.status(404).json({ error: 'Job not found or expired' });
     }
-
-    const job = result.rows[0];
-    return res.json({
-      jobId: job.id,
-      status: job.status,
-      assetUrl: job.asset_url,
-      outputData: job.output_data,
-      error: job.error_message,
-      startedAt: job.job_started_at,
-      completedAt: job.job_completed_at,
-    });
-  } catch (err) {
-    console.error('[AI] Video status error:', err.message);
-    return res.status(500).json({ error: 'Failed to get job status' });
   }
+  if (job.status === 'completed') {
+    return res.json({ jobId: req.params.jobId, status: 'completed', assetUrl: job.assetUrl, imageUrl: job.imageUrl });
+  }
+  if (job.status === 'failed') {
+    return res.json({ jobId: req.params.jobId, status: 'failed', error: job.error });
+  }
+  return res.json({ jobId: req.params.jobId, status: 'processing' });
 });
+
 
 // ─── POST /api/ai/voiceover ───────────────────────────────────────────────────
 // Async voiceover using OpenAI TTS — same API key as ad copy, no extra setup
