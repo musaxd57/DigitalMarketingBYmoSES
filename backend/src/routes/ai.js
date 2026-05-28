@@ -9,7 +9,7 @@ const VideoPipeline = require('../services/videoPipeline');
 const TrendEngine = require('../services/trendEngine');
 
 // ─── POST /api/ai/ad-copy ─────────────────────────────────────────────────────
-// Generate ad copy variants using OpenAI
+// Starts async ad copy generation — returns generationId immediately
 router.post('/ad-copy', authenticate, aiLimiter, async (req, res) => {
   const {
     brandName,
@@ -25,79 +25,79 @@ router.post('/ad-copy', authenticate, aiLimiter, async (req, res) => {
     return res.status(400).json({ error: 'brandName and productDescription are required' });
   }
 
-  // Log generation start
-  const genRes = await pool.query(
-    `INSERT INTO ai_generations
-       (tenant_id, user_id, type, status, input_data, model_used)
-     VALUES ($1, $2, 'ad_copy', 'processing', $3, $4)
-     RETURNING id`,
-    [
-      req.user.tenantId,
-      req.user.id,
-      JSON.stringify({ brandName, productDescription, targetAudience, tone, platform, variants }),
-      config.openai.model,
-    ]
-  );
-  const generationId = genRes.rows[0].id;
-
+  let generationId;
   try {
-    const platformGuidance = {
-      meta: 'Facebook/Instagram ad. Primary text up to 125 chars, headline 40 chars, description 30 chars.',
-      google: 'Google Search ad. Headline 30 chars, description 90 chars, call to action.',
-      tiktok: 'TikTok ad. Hook in first 3 seconds, energetic, conversational, include trending language.',
-    };
+    const genRes = await pool.query(
+      `INSERT INTO ai_generations
+         (tenant_id, user_id, type, status, input_data, model_used)
+       VALUES ($1, $2, 'ad_copy', 'processing', $3, $4)
+       RETURNING id`,
+      [
+        req.user.tenantId,
+        req.user.id,
+        JSON.stringify({ brandName, productDescription, targetAudience, tone, platform, variants }),
+        config.openai.model,
+      ]
+    );
+    generationId = genRes.rows[0].id;
+  } catch (dbErr) {
+    console.error('[AI] DB insert error:', dbErr.message);
+    return res.status(500).json({ error: 'Database error', details: dbErr.message });
+  }
 
-    const systemPrompt = `You are an expert digital advertising copywriter with 10+ years creating high-converting ad copy.
+  // Respond immediately — client will poll for results
+  res.status(202).json({ generationId, status: 'processing' });
+
+  // Run OpenAI in background
+  setImmediate(async () => {
+    try {
+      const platformGuidance = {
+        meta: 'Facebook/Instagram ad. Primary text up to 125 chars, headline 40 chars, description 30 chars.',
+        google: 'Google Search ad. Headline 30 chars, description 90 chars, call to action.',
+        tiktok: 'TikTok ad. Hook in first 3 seconds, energetic, conversational, include trending language.',
+      };
+
+      const systemPrompt = `You are an expert digital advertising copywriter with 10+ years creating high-converting ad copy.
 Generate ${variants} distinct ad copy variants for ${platform} ads.
 Platform specs: ${platformGuidance[platform] || platformGuidance.meta}
 Tone: ${tone}
-Return a JSON array with exactly ${variants} objects, each containing:
-{
-  "variant": number,
-  "headline": "...",
-  "primaryText": "...",
-  "description": "...",
-  "callToAction": "...",
-  "hook": "first 3 seconds hook line",
-  "uniqueAngle": "the unique selling angle used"
-}`;
+Return a JSON object with key "variants" containing exactly ${variants} objects, each having:
+{ "variant": number, "headline": "...", "primaryText": "...", "description": "...", "callToAction": "...", "hook": "...", "uniqueAngle": "..." }`;
 
-    const userPrompt = `Brand: ${brandName}
+      const userPrompt = `Brand: ${brandName}
 Product/Service: ${productDescription}
 Target Audience: ${targetAudience || 'general consumers'}
 Generate ${variants} high-converting ad copy variants.`;
 
-    const openaiRes = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: config.openai.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: config.openai.maxTokens,
-        temperature: 0.8,
-        response_format: { type: 'json_object' },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${config.openai.apiKey}`,
-          'Content-Type': 'application/json',
+      const openaiRes = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: config.openai.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: config.openai.maxTokens,
+          temperature: 0.8,
+          response_format: { type: 'json_object' },
         },
-        timeout: 90000,
-      }
-    );
+        {
+          headers: {
+            Authorization: `Bearer ${config.openai.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 90000,
+        }
+      );
 
-    const usage = openaiRes.data.usage;
-    let parsedContent;
-    try {
+      const usage = openaiRes.data.usage;
       const raw = openaiRes.data.choices[0].message.content;
-      parsedContent = JSON.parse(raw);
-      // Handle both array and { variants: [...] } format
-      const adCopyVariants = Array.isArray(parsedContent) ? parsedContent : (parsedContent.variants || parsedContent.ad_copy || Object.values(parsedContent)[0]);
+      const parsedContent = JSON.parse(raw);
+      const adCopyVariants = Array.isArray(parsedContent)
+        ? parsedContent
+        : (parsedContent.variants || parsedContent.ad_copy || Object.values(parsedContent)[0]);
 
-      // Calculate cost (gpt-4-turbo: $0.01/1K input, $0.03/1K output)
-      const costUsd = (usage.prompt_tokens / 1000) * 0.01 + (usage.completion_tokens / 1000) * 0.03;
+      const costUsd = (usage.prompt_tokens / 1000) * 0.00015 + (usage.completion_tokens / 1000) * 0.0006;
 
       await pool.query(
         `UPDATE ai_generations
@@ -107,7 +107,6 @@ Generate ${variants} high-converting ad copy variants.`;
         [JSON.stringify({ variants: adCopyVariants }), usage.total_tokens, costUsd, generationId]
       );
 
-      // Create creative records
       if (campaignId) {
         for (const variant of adCopyVariants) {
           await pool.query(
@@ -124,23 +123,44 @@ Generate ${variants} high-converting ad copy variants.`;
           );
         }
       }
-
-      return res.json({
-        generationId,
-        variants: adCopyVariants,
-        usage: { tokens: usage.total_tokens, costUsd },
-      });
-    } catch (parseErr) {
-      throw new Error(`Failed to parse OpenAI response: ${parseErr.message}`);
+    } catch (err) {
+      console.error('[AI] Background ad copy error:', err.response?.data || err.message);
+      await pool.query(
+        `UPDATE ai_generations SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
+        [err.message, generationId]
+      ).catch(() => {});
     }
-  } catch (err) {
-    console.error('[AI] Ad copy error:', err.response?.data || err.message);
-    await pool.query(
-      `UPDATE ai_generations SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
-      [err.message, generationId]
+  });
+});
+
+// ─── GET /api/ai/ad-copy/status/:id ──────────────────────────────────────────
+// Poll for ad copy generation result
+router.get('/ad-copy/status/:id', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, status, output_data, error_message, tokens_used, cost_usd
+       FROM ai_generations
+       WHERE id = $1 AND tenant_id = $2 AND type = 'ad_copy'`,
+      [req.params.id, req.user.tenantId]
     );
-    return res.status(500).json({ error: 'Failed to generate ad copy', details: err.message });
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Job not found' });
+    const row = result.rows[0];
+    if (row.status === 'completed') {
+      return res.json({
+        status: 'completed',
+        generationId: row.id,
+        variants: row.output_data?.variants || [],
+        usage: { tokens: row.tokens_used, costUsd: row.cost_usd },
+      });
+    }
+    if (row.status === 'failed') {
+      return res.json({ status: 'failed', error: row.error_message });
+    }
+    return res.json({ status: 'processing' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to get status' });
   }
+});
 });
 
 // ─── POST /api/ai/video ───────────────────────────────────────────────────────

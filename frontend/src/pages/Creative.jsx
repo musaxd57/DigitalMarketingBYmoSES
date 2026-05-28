@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { aiAPI, creativeAPI } from '../services/api';
 import CreativeScoreCard from '../components/CreativeScoreCard';
 import { useSocket } from '../App';
@@ -26,6 +26,7 @@ export default function Creative() {
   const [generatingVideo, setGeneratingVideo] = useState(false);
   const [videoJob, setVideoJob] = useState(null);
   const pollRef = useRef(null);
+  const copyPollRef = useRef(null);
 
   // Voiceover state
   const [voiceForm, setVoiceForm] = useState({ text: '', voiceId: '21m00Tcm4TlvDq8ikWAM' });
@@ -58,6 +59,7 @@ export default function Creative() {
         socket.off('job:completed');
         socket.off('job:failed');
       }
+      if (copyPollRef.current) clearInterval(copyPollRef.current);
     };
   }, [socket, videoJob?.jobId]);
 
@@ -75,12 +77,32 @@ export default function Creative() {
     if (!copyForm.brandName || !copyForm.productDescription) return;
     setGeneratingCopy(true);
     setCopyResults(null);
+    if (copyPollRef.current) clearInterval(copyPollRef.current);
+
     try {
       const res = await aiAPI.generateAdCopy(copyForm);
-      setCopyResults(res.data);
+      const { generationId } = res.data;
+
+      // Poll every 3 seconds for result
+      copyPollRef.current = setInterval(async () => {
+        try {
+          const statusRes = await aiAPI.getAdCopyStatus(generationId);
+          const { status, variants, error } = statusRes.data;
+          if (status === 'completed') {
+            clearInterval(copyPollRef.current);
+            setCopyResults({ variants });
+            setGeneratingCopy(false);
+          } else if (status === 'failed') {
+            clearInterval(copyPollRef.current);
+            alert(`Generation failed: ${error || 'Unknown error'}`);
+            setGeneratingCopy(false);
+          }
+        } catch {
+          // ignore poll errors, keep trying
+        }
+      }, 3000);
     } catch (err) {
       alert(`Failed: ${err.response?.data?.error || err.message}`);
-    } finally {
       setGeneratingCopy(false);
     }
   };

@@ -141,7 +141,8 @@ export const creativeAPI = {
 // ─── AI API ───────────────────────────────────────────────────────────────────
 const AI_TIMEOUT = 120000;
 export const aiAPI = {
-  generateAdCopy: (data) => api.post('/ai/ad-copy', data, { timeout: AI_TIMEOUT }),
+  generateAdCopy: (data) => api.post('/ai/ad-copy', data),
+  getAdCopyStatus: (id) => api.get(`/ai/ad-copy/status/${id}`),
   generateVideo: (data) => api.post('/ai/video', data, { timeout: AI_TIMEOUT }),
   getVideoStatus: (jobId) => api.get(`/ai/video/status/${jobId}`),
   generateVoiceover: (data) => api.post('/ai/voiceover', data, { timeout: AI_TIMEOUT }),
