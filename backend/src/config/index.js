@@ -76,7 +76,7 @@ const config = {
 
   runway: {
     apiKey: process.env.RUNWAY_API_KEY || '',
-    baseUrl: 'https://api.runwayml.com/v1',
+    baseUrl: 'https://api.dev.runwayml.com/v1',
   },
 
   n8n: {
