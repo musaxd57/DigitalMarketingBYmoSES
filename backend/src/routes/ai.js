@@ -84,6 +84,7 @@ Generate ${variants} high-converting ad copy variants.`;
           Authorization: `Bearer ${config.openai.apiKey}`,
           'Content-Type': 'application/json',
         },
+        timeout: 90000,
       }
     );
 
@@ -359,6 +360,7 @@ Analyze ad campaign data and provide actionable insights in JSON format with:
           Authorization: `Bearer ${config.openai.apiKey}`,
           'Content-Type': 'application/json',
         },
+        timeout: 90000,
       }
     );
 
