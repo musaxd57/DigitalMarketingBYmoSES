@@ -246,25 +246,59 @@ router.get('/google/callback', async (req, res) => {
     });
     const email = profileRes.data.email;
 
-    // Fetch Google Ads customer IDs
-    const customersRes = await axios.get(
-      'https://googleads.googleapis.com/v15/customers:listAccessibleCustomers',
-      {
-        headers: {
-          Authorization: `Bearer ${access_token}`,
-          'developer-token': config.google.developerToken,
-        },
-      }
-    );
-
-    const resourceNames = customersRes.data.resourceNames || [];
     const encryptedAccess = encryptToken(access_token);
     const encryptedRefresh = refresh_token ? encryptToken(refresh_token) : null;
     const expiresAt = new Date(Date.now() + (expires_in || 3600) * 1000);
 
-    for (const resourceName of resourceNames) {
-      const customerId = resourceName.replace('customers/', '');
+    // Fetch Google Ads customer IDs (optional — requires developer token + Google Ads account)
+    let resourceNames = [];
+    if (config.google.developerToken) {
+      try {
+        const customersRes = await axios.get(
+          'https://googleads.googleapis.com/v15/customers:listAccessibleCustomers',
+          {
+            headers: {
+              Authorization: `Bearer ${access_token}`,
+              'developer-token': config.google.developerToken,
+            },
+          }
+        );
+        resourceNames = customersRes.data.resourceNames || [];
+      } catch (adsErr) {
+        console.warn('[Accounts] Google Ads customer fetch skipped:', adsErr.response?.data?.error?.message || adsErr.message);
+      }
+    }
 
+    if (resourceNames.length > 0) {
+      for (const resourceName of resourceNames) {
+        const customerId = resourceName.replace('customers/', '');
+
+        await pool.query(
+          `INSERT INTO ad_accounts
+             (tenant_id, platform, account_id, account_name, encrypted_access_token,
+              encrypted_refresh_token, token_expires_at, scopes, is_active, metadata)
+           VALUES ($1, 'google', $2, $3, $4, $5, $6, $7, true, $8)
+           ON CONFLICT (tenant_id, platform, account_id)
+           DO UPDATE SET
+             encrypted_access_token = EXCLUDED.encrypted_access_token,
+             encrypted_refresh_token = COALESCE(EXCLUDED.encrypted_refresh_token, ad_accounts.encrypted_refresh_token),
+             token_expires_at = EXCLUDED.token_expires_at,
+             is_active = true,
+             updated_at = NOW()`,
+          [
+            stateData.tenantId,
+            customerId,
+            `Google Ads - ${email}`,
+            encryptedAccess,
+            encryptedRefresh,
+            expiresAt,
+            config.google.scope,
+            JSON.stringify({ email }),
+          ]
+        );
+      }
+    } else {
+      // Save as a generic Google connection without a specific Ads account ID
       await pool.query(
         `INSERT INTO ad_accounts
            (tenant_id, platform, account_id, account_name, encrypted_access_token,
@@ -279,8 +313,8 @@ router.get('/google/callback', async (req, res) => {
            updated_at = NOW()`,
         [
           stateData.tenantId,
-          customerId,
-          `Google Ads - ${email}`,
+          `google_${email}`,
+          `Google - ${email}`,
           encryptedAccess,
           encryptedRefresh,
           expiresAt,
@@ -291,7 +325,7 @@ router.get('/google/callback', async (req, res) => {
     }
 
     return res.redirect(
-      `${config.cors.origin}/settings?success=google_connected&accounts=${resourceNames.length}`
+      `${config.cors.origin}/settings?success=google_connected&accounts=${resourceNames.length || 1}`
     );
   } catch (err) {
     console.error('[Accounts] Google OAuth error:', err.response?.data || err.message);
