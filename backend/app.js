@@ -315,9 +315,23 @@ demoRouter.post('/seed', authenticate, async (req, res) => {
 
 demoRouter.delete('/clear', authenticate, async (req, res) => {
   try {
+    const tenantId = req.user.tenantId;
+    // Delete analytics snapshots for demo campaigns
+    await pool.query(
+      `DELETE FROM analytics_snapshots WHERE tenant_id = $1 AND campaign_id IN (
+        SELECT id FROM campaigns WHERE tenant_id = $1 AND external_id LIKE 'DEMO_%'
+      )`,
+      [tenantId]
+    );
+    // Delete demo campaigns
+    await pool.query(
+      `DELETE FROM campaigns WHERE tenant_id = $1 AND external_id LIKE 'DEMO_%'`,
+      [tenantId]
+    );
+    // Delete demo ad accounts
     await pool.query(
       `DELETE FROM ad_accounts WHERE tenant_id = $1 AND account_id LIKE 'DEMO_%'`,
-      [req.user.tenantId]
+      [tenantId]
     );
     return res.json({ message: 'Demo verisi temizlendi' });
   } catch (err) {
