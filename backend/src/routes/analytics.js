@@ -187,21 +187,23 @@ router.get('/by-platform', authenticate, async (req, res) => {
 
     const result = await pool.query(
       `SELECT
-        platform,
-        SUM(impressions) AS impressions,
-        SUM(clicks) AS clicks,
-        SUM(spend) AS spend,
-        SUM(conversions) AS conversions,
-        SUM(conversion_value) AS revenue,
-        CASE WHEN SUM(spend) > 0 THEN SUM(conversion_value) / SUM(spend) ELSE 0 END AS roas,
-        CASE WHEN SUM(impressions) > 0 THEN SUM(clicks)::decimal / SUM(impressions) ELSE 0 END AS ctr,
-        CASE WHEN SUM(conversions) > 0 THEN SUM(spend) / SUM(conversions) ELSE 0 END AS cpa
-       FROM analytics_snapshots
-       WHERE tenant_id = $1
-         AND snapshot_date BETWEEN $2 AND $3
-         AND granularity = 'daily'
-       GROUP BY platform
-       ORDER BY SUM(spend) DESC`,
+        ans.platform,
+        SUM(ans.impressions) AS impressions,
+        SUM(ans.clicks) AS clicks,
+        SUM(ans.spend) AS spend,
+        SUM(ans.conversions) AS conversions,
+        SUM(ans.conversion_value) AS revenue,
+        CASE WHEN SUM(ans.spend) > 0 THEN SUM(ans.conversion_value) / SUM(ans.spend) ELSE 0 END AS roas,
+        CASE WHEN SUM(ans.impressions) > 0 THEN SUM(ans.clicks)::decimal / SUM(ans.impressions) ELSE 0 END AS ctr,
+        CASE WHEN SUM(ans.conversions) > 0 THEN SUM(ans.spend) / SUM(ans.conversions) ELSE 0 END AS cpa
+       FROM analytics_snapshots ans
+       JOIN campaigns c ON ans.campaign_id = c.id
+       WHERE ans.tenant_id = $1
+         AND ans.snapshot_date BETWEEN $2 AND $3
+         AND ans.granularity = 'daily'
+         AND c.external_id NOT LIKE 'DEMO_%'
+       GROUP BY ans.platform
+       ORDER BY SUM(ans.spend) DESC`,
       [req.user.tenantId, start, end]
     );
 
@@ -237,6 +239,7 @@ router.get('/top-campaigns', authenticate, async (req, res) => {
        WHERE c.tenant_id = $1
          AND a.snapshot_date BETWEEN $2 AND $3
          AND a.granularity = 'daily'
+         AND c.external_id NOT LIKE 'DEMO_%'
        GROUP BY c.id, c.name, c.platform, c.status
        ORDER BY roas DESC
        LIMIT $4`,
