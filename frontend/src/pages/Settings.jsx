@@ -159,8 +159,6 @@ export default function Settings() {
     { key: 'billing', label: 'Plan & Billing' },
   ];
 
-  const hasDemoAccounts = accounts.some((a) => a.account_id?.startsWith('DEMO_'));
-
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
@@ -168,11 +166,9 @@ export default function Settings() {
           <h1 className="text-white text-xl font-semibold">Settings</h1>
           <p className="text-[#555] text-sm">Manage your integrations and account settings</p>
         </div>
-        {hasDemoAccounts && (
-          <button onClick={handleClearDemo} className="px-3 py-1.5 text-xs text-red-400 border border-red-400/20 rounded-lg hover:bg-red-400/10 transition-all">
-            Demo Verileri Temizle
-          </button>
-        )}
+        <button onClick={handleClearDemo} className="px-3 py-1.5 text-xs text-red-400 border border-red-400/20 rounded-lg hover:bg-red-400/10 transition-all">
+          Demo Verileri Temizle
+        </button>
       </div>
 
       {/* OAuth callback messages */}
