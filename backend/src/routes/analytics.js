@@ -29,6 +29,7 @@ router.get('/overview', authenticate, async (req, res) => {
       WHERE ans.tenant_id = $1
         AND ans.snapshot_date BETWEEN $2 AND $3
         AND ans.granularity = 'daily'
+        AND c.external_id NOT LIKE 'DEMO_%'
     `;
 
     const params = [req.user.tenantId, start, end];
@@ -67,6 +68,7 @@ router.get('/overview', authenticate, async (req, res) => {
       WHERE ans.tenant_id = $1
         AND ans.snapshot_date BETWEEN $2 AND $3
         AND ans.granularity = 'daily'
+        AND c.external_id NOT LIKE 'DEMO_%'
     `;
     let prevIdx = 4;
     if (platform) { prevQuery += ` AND ans.platform = $${prevIdx++}`; prevParams.push(platform); }
@@ -130,21 +132,23 @@ router.get('/timeseries', authenticate, async (req, res) => {
         CASE WHEN SUM(clicks) > 0 THEN SUM(spend) / SUM(clicks) ELSE 0 END AS cpc,
         CASE WHEN SUM(impressions) > 0 THEN SUM(spend) / SUM(impressions) * 1000 ELSE 0 END AS cpm,
         CASE WHEN SUM(conversions) > 0 THEN SUM(spend) / SUM(conversions) ELSE 0 END AS cpa
-      FROM analytics_snapshots
-      WHERE tenant_id = $1
-        AND snapshot_date BETWEEN $2 AND $3
-        AND granularity = 'daily'
+      FROM analytics_snapshots ans
+      JOIN campaigns c ON ans.campaign_id = c.id
+      WHERE ans.tenant_id = $1
+        AND ans.snapshot_date BETWEEN $2 AND $3
+        AND ans.granularity = 'daily'
+        AND c.external_id NOT LIKE 'DEMO_%'
     `;
 
     const params = [req.user.tenantId, start, end];
     let idx = 4;
 
     if (platform) {
-      query += ` AND platform = $${idx++}`;
+      query += ` AND ans.platform = $${idx++}`;
       params.push(platform);
     }
     if (campaignId) {
-      query += ` AND campaign_id = $${idx++}`;
+      query += ` AND ans.campaign_id = $${idx++}`;
       params.push(campaignId);
     }
 
@@ -255,15 +259,17 @@ router.get('/ltv', authenticate, async (req, res) => {
 
     const result = await pool.query(
       `SELECT
-        SUM(conversions) AS total_customers,
-        SUM(conversion_value) AS total_revenue,
-        CASE WHEN SUM(conversions) > 0 THEN SUM(conversion_value) / SUM(conversions) ELSE 0 END AS aov,
-        SUM(spend) AS total_cac_spend,
-        CASE WHEN SUM(conversions) > 0 THEN SUM(spend) / SUM(conversions) ELSE 0 END AS avg_cac
-       FROM analytics_snapshots
-       WHERE tenant_id = $1
-         AND snapshot_date BETWEEN $2 AND $3
-         AND granularity = 'daily'`,
+        SUM(ans.conversions) AS total_customers,
+        SUM(ans.conversion_value) AS total_revenue,
+        CASE WHEN SUM(ans.conversions) > 0 THEN SUM(ans.conversion_value) / SUM(ans.conversions) ELSE 0 END AS aov,
+        SUM(ans.spend) AS total_cac_spend,
+        CASE WHEN SUM(ans.conversions) > 0 THEN SUM(ans.spend) / SUM(ans.conversions) ELSE 0 END AS avg_cac
+       FROM analytics_snapshots ans
+       JOIN campaigns c ON ans.campaign_id = c.id
+       WHERE ans.tenant_id = $1
+         AND ans.snapshot_date BETWEEN $2 AND $3
+         AND ans.granularity = 'daily'
+         AND c.external_id NOT LIKE 'DEMO_%'`,
       [req.user.tenantId, start, end]
     );
 
