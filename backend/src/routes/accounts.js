@@ -156,29 +156,24 @@ router.get('/meta/callback', async (req, res) => {
 
     // Upsert all ad accounts
     for (const account of adAccounts) {
-      await pool.query(
-        `INSERT INTO ad_accounts
-           (tenant_id, platform, account_id, account_name, currency, timezone,
-            encrypted_access_token, token_expires_at, scopes, is_active)
-         VALUES ($1, 'meta', $2, $3, $4, $5, $6, $7, $8, true)
-         ON CONFLICT (tenant_id, platform, account_id)
-         DO UPDATE SET
-           account_name = EXCLUDED.account_name,
-           encrypted_access_token = EXCLUDED.encrypted_access_token,
-           token_expires_at = EXCLUDED.token_expires_at,
-           is_active = true,
-           updated_at = NOW()`,
-        [
-          stateData.tenantId,
-          account.account_id || account.id.replace('act_', ''),
-          account.name,
-          account.currency,
-          account.timezone_name,
-          encryptedToken,
-          expiresAt,
-          config.meta.scope.split(','),
-        ]
+      const metaAccountId = account.account_id || account.id.replace('act_', '');
+      const existingMeta = await pool.query(
+        `SELECT id FROM ad_accounts WHERE tenant_id = $1 AND platform = 'meta' AND account_id = $2`,
+        [stateData.tenantId, metaAccountId]
       );
+      if (existingMeta.rows.length > 0) {
+        await pool.query(
+          `UPDATE ad_accounts SET account_name=$1, encrypted_access_token=$2, token_expires_at=$3, is_active=true, updated_at=NOW()
+           WHERE tenant_id=$4 AND platform='meta' AND account_id=$5`,
+          [account.name, encryptedToken, expiresAt, stateData.tenantId, metaAccountId]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO ad_accounts (tenant_id, platform, account_id, account_name, currency, timezone, encrypted_access_token, token_expires_at, scopes, is_active)
+           VALUES ($1, 'meta', $2, $3, $4, $5, $6, $7, $8, true)`,
+          [stateData.tenantId, metaAccountId, account.name, account.currency, account.timezone_name, encryptedToken, expiresAt, config.meta.scope.split(',')]
+        );
+      }
     }
 
     return res.redirect(`${config.cors.origin}/settings?success=meta_connected&accounts=${adAccounts.length}`);
@@ -269,59 +264,37 @@ router.get('/google/callback', async (req, res) => {
       }
     }
 
-    if (resourceNames.length > 0) {
-      for (const resourceName of resourceNames) {
-        const customerId = resourceName.replace('customers/', '');
-
+    const upsertAccount = async (accountId, accountName) => {
+      const existing = await pool.query(
+        `SELECT id FROM ad_accounts WHERE tenant_id = $1 AND platform = 'google' AND account_id = $2`,
+        [stateData.tenantId, accountId]
+      );
+      if (existing.rows.length > 0) {
+        await pool.query(
+          `UPDATE ad_accounts SET
+             encrypted_access_token = $1,
+             encrypted_refresh_token = COALESCE($2, encrypted_refresh_token),
+             token_expires_at = $3, is_active = true, updated_at = NOW()
+           WHERE tenant_id = $4 AND platform = 'google' AND account_id = $5`,
+          [encryptedAccess, encryptedRefresh, expiresAt, stateData.tenantId, accountId]
+        );
+      } else {
         await pool.query(
           `INSERT INTO ad_accounts
              (tenant_id, platform, account_id, account_name, encrypted_access_token,
               encrypted_refresh_token, token_expires_at, scopes, is_active, metadata)
-           VALUES ($1, 'google', $2, $3, $4, $5, $6, $7, true, $8)
-           ON CONFLICT (tenant_id, platform, account_id)
-           DO UPDATE SET
-             encrypted_access_token = EXCLUDED.encrypted_access_token,
-             encrypted_refresh_token = COALESCE(EXCLUDED.encrypted_refresh_token, ad_accounts.encrypted_refresh_token),
-             token_expires_at = EXCLUDED.token_expires_at,
-             is_active = true,
-             updated_at = NOW()`,
-          [
-            stateData.tenantId,
-            customerId,
-            `Google Ads - ${email}`,
-            encryptedAccess,
-            encryptedRefresh,
-            expiresAt,
-            config.google.scope,
-            JSON.stringify({ email }),
-          ]
+           VALUES ($1, 'google', $2, $3, $4, $5, $6, $7, true, $8)`,
+          [stateData.tenantId, accountId, accountName, encryptedAccess, encryptedRefresh, expiresAt, config.google.scope, JSON.stringify({ email })]
         );
       }
+    };
+
+    if (resourceNames.length > 0) {
+      for (const resourceName of resourceNames) {
+        await upsertAccount(resourceName.replace('customers/', ''), `Google Ads - ${email}`);
+      }
     } else {
-      // Save as a generic Google connection without a specific Ads account ID
-      await pool.query(
-        `INSERT INTO ad_accounts
-           (tenant_id, platform, account_id, account_name, encrypted_access_token,
-            encrypted_refresh_token, token_expires_at, scopes, is_active, metadata)
-         VALUES ($1, 'google', $2, $3, $4, $5, $6, $7, true, $8)
-         ON CONFLICT (tenant_id, platform, account_id)
-         DO UPDATE SET
-           encrypted_access_token = EXCLUDED.encrypted_access_token,
-           encrypted_refresh_token = COALESCE(EXCLUDED.encrypted_refresh_token, ad_accounts.encrypted_refresh_token),
-           token_expires_at = EXCLUDED.token_expires_at,
-           is_active = true,
-           updated_at = NOW()`,
-        [
-          stateData.tenantId,
-          `google_${email}`,
-          `Google - ${email}`,
-          encryptedAccess,
-          encryptedRefresh,
-          expiresAt,
-          config.google.scope,
-          JSON.stringify({ email }),
-        ]
-      );
+      await upsertAccount(`google_${email}`, `Google - ${email}`);
     }
 
     return res.redirect(
@@ -403,27 +376,23 @@ router.get('/tiktok/callback', async (req, res) => {
 
       const advertiserInfo = infoRes.data.data?.list?.[0] || {};
 
-      await pool.query(
-        `INSERT INTO ad_accounts
-           (tenant_id, platform, account_id, account_name, currency, timezone,
-            encrypted_access_token, scopes, is_active)
-         VALUES ($1, 'tiktok', $2, $3, $4, $5, $6, $7, true)
-         ON CONFLICT (tenant_id, platform, account_id)
-         DO UPDATE SET
-           account_name = EXCLUDED.account_name,
-           encrypted_access_token = EXCLUDED.encrypted_access_token,
-           is_active = true,
-           updated_at = NOW()`,
-        [
-          stateData.tenantId,
-          advertiserId,
-          advertiserInfo.advertiser_name || `TikTok Account ${advertiserId}`,
-          advertiserInfo.currency || 'USD',
-          advertiserInfo.timezone || 'UTC',
-          encryptedToken,
-          config.tiktok.scope.split(','),
-        ]
+      const existingTiktok = await pool.query(
+        `SELECT id FROM ad_accounts WHERE tenant_id = $1 AND platform = 'tiktok' AND account_id = $2`,
+        [stateData.tenantId, advertiserId]
       );
+      if (existingTiktok.rows.length > 0) {
+        await pool.query(
+          `UPDATE ad_accounts SET account_name=$1, encrypted_access_token=$2, is_active=true, updated_at=NOW()
+           WHERE tenant_id=$3 AND platform='tiktok' AND account_id=$4`,
+          [advertiserInfo.advertiser_name || `TikTok Account ${advertiserId}`, encryptedToken, stateData.tenantId, advertiserId]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO ad_accounts (tenant_id, platform, account_id, account_name, currency, timezone, encrypted_access_token, scopes, is_active)
+           VALUES ($1, 'tiktok', $2, $3, $4, $5, $6, $7, true)`,
+          [stateData.tenantId, advertiserId, advertiserInfo.advertiser_name || `TikTok Account ${advertiserId}`, advertiserInfo.currency || 'USD', advertiserInfo.timezone || 'UTC', encryptedToken, config.tiktok.scope.split(',')]
+        );
+      }
     }
 
     return res.redirect(
