@@ -151,7 +151,7 @@ export default function Analytics() {
   const ChartWrapper = chartType === 'area' ? AreaChart : chartType === 'bar' ? BarChart : LineChart;
 
   return (
-    <div className="p-6 space-y-6 page-enter">
+    <div className="p-6 space-y-6 page-enter" key="analytics-page">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -243,9 +243,17 @@ export default function Analytics() {
         </div>
 
         {loading ? (
-          <div className="h-64 bg-white/3 animate-pulse rounded-lg" />
+          <div className="skeleton h-64" />
         ) : timeseries.length === 0 ? (
-          <div className="h-64 flex items-center justify-center text-[#333] text-sm">Veri yok</div>
+          <div className="h-64 flex flex-col items-center justify-center gap-4 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-[#111118] border border-white/5 flex items-center justify-center mb-2">
+              <svg className="w-8 h-8 text-[#333]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+              </svg>
+            </div>
+            <h3 className="text-white text-base font-semibold">Grafik verisi yok</h3>
+            <p className="text-[#555] text-sm max-w-xs leading-relaxed">Bu dönem için harcama kaydı bulunmuyor</p>
+          </div>
         ) : (
           <ResponsiveContainer width="100%" height={280}>
             <ChartWrapper data={timeseries} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
@@ -297,10 +305,21 @@ export default function Analytics() {
         </div>
         {loading ? (
           <div className="p-5 space-y-3">
-            {[...Array(5)].map((_, i) => <div key={i} className="h-10 bg-white/3 animate-pulse rounded" />)}
+            {[...Array(5)].map((_, i) => <div key={i} className="skeleton h-10" />)}
           </div>
         ) : topCampaigns.length === 0 ? (
-          <div className="p-10 text-center text-[#444] text-sm">Kampanya verisi bulunamadı</div>
+          <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-[#111118] border border-white/5 flex items-center justify-center mb-2">
+              <svg className="w-8 h-8 text-[#333]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+            <h3 className="text-white text-base font-semibold">Kampanya verisi bulunamadı</h3>
+            <p className="text-[#555] text-sm max-w-xs leading-relaxed">Seçilen dönem için analiz edilecek kampanya verisi yok</p>
+            <a href="/campaigns" className="mt-2 px-4 py-2 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/30 text-[#00ff88] text-sm font-medium hover:bg-[#00ff88]/20 transition-all">
+              Kampanyalar
+            </a>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
