@@ -187,7 +187,7 @@ export default function TrendEngine() {
   ];
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-6 space-y-5 page-enter">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -265,7 +265,7 @@ export default function TrendEngine() {
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-32 bg-[#111118] rounded-xl border border-white/5 animate-pulse" />
+            <div key={i} className="skeleton h-32 rounded-xl" />
           ))}
         </div>
       ) : !report ? (
@@ -281,7 +281,9 @@ export default function TrendEngine() {
       ) : (
         <>
           {/* Report header */}
-          <div className="bg-[#111118] rounded-xl border border-white/5 p-5">
+          <div className="bg-[#111118] rounded-xl border border-white/5 p-5 relative overflow-hidden">
+            {/* Subtle gradient top border */}
+            <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(to right, transparent, rgba(0,255,136,0.3), transparent)' }} />
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
@@ -312,6 +314,7 @@ export default function TrendEngine() {
                     ? 'bg-[#00ff88]/10 text-[#00ff88] border border-[#00ff88]/30'
                     : 'text-[#555] border border-white/5 hover:text-[#888]'
                   }`}
+                style={activeSection === s.key ? { boxShadow: '0 0 12px rgba(0,255,136,0.15)' } : {}}
               >
                 {s.label}
                 {s.count > 0 && (

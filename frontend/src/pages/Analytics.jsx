@@ -151,7 +151,7 @@ export default function Analytics() {
   const ChartWrapper = chartType === 'area' ? AreaChart : chartType === 'bar' ? BarChart : LineChart;
 
   return (
-    <div className="p-6 space-y-6 page-enter" key="analytics-page">
+    <div className="p-6 space-y-6 page-enter">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -332,7 +332,7 @@ export default function Analytics() {
               </thead>
               <tbody className="divide-y divide-white/3">
                 {topCampaigns.map((c, idx) => (
-                  <tr key={c.id} className="hover:bg-white/2 transition-colors">
+                  <tr key={c.id} className="hover:bg-white/[0.03] transition-colors cursor-pointer">
                     <td className="px-4 py-3 text-[#444] text-xs font-mono">#{idx + 1}</td>
                     <td className="px-4 py-3 text-white text-sm max-w-[200px] truncate">{c.name}</td>
                     <td className="px-4 py-3 text-xs font-mono capitalize" style={{ color: { meta: '#1877f2', google: '#4285f4', tiktok: '#ff0050' }[c.platform] || '#888' }}>{c.platform?.toUpperCase()}</td>

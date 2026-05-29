@@ -277,7 +277,7 @@ export default function Campaigns() {
   const totalPages = Math.ceil(total / LIMIT);
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-6 space-y-5 page-enter">
       {showCreate && (
         <CreateCampaignModal
           onClose={() => setShowCreate(false)}
@@ -350,24 +350,24 @@ export default function Campaigns() {
           {loading ? (
             <div className="p-5 space-y-3">
               {[...Array(8)].map((_, i) => (
-                <div key={i} className="h-12 bg-white/3 animate-pulse rounded" />
+                <div key={i} className="skeleton h-12" />
               ))}
             </div>
           ) : campaigns.length === 0 ? (
-            <div className="p-16 text-center">
-              <div className="w-16 h-16 rounded-full bg-white/3 flex items-center justify-center mx-auto mb-4">
+            <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-[#111118] border border-white/5 flex items-center justify-center mb-2">
                 <svg className="w-8 h-8 text-[#333]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                    d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                    d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
                 </svg>
               </div>
-              <p className="text-[#444] text-sm">Kampanya bulunamadı</p>
-              <p className="text-[#333] text-xs mt-1">Yeni kampanya oluşturmak için butona tıkla</p>
+              <h3 className="text-white text-base font-semibold">Kampanya bulunamadı</h3>
+              <p className="text-[#555] text-sm max-w-xs leading-relaxed">Filtrelerinizi değiştirin veya yeni kampanya oluşturun</p>
               <button
                 onClick={() => setShowCreate(true)}
-                className="mt-4 px-4 py-2 bg-[#00ff88]/10 border border-[#00ff88]/30 text-[#00ff88] text-sm rounded-lg hover:bg-[#00ff88]/20 transition-all"
+                className="mt-2 px-4 py-2 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/30 text-[#00ff88] text-sm font-medium hover:bg-[#00ff88]/20 transition-all"
               >
-                + Yeni Kampanya
+                Yeni Kampanya Oluştur
               </button>
             </div>
           ) : (
@@ -381,7 +381,7 @@ export default function Campaigns() {
               </thead>
               <tbody className="divide-y divide-white/3">
                 {campaigns.map((c) => (
-                  <tr key={c.id} className="hover:bg-white/2 transition-colors">
+                  <tr key={c.id} className="hover:bg-white/[0.03] transition-colors cursor-pointer">
                     <td className="px-4 py-3 min-w-[200px]">
                       <div className="text-white text-sm font-medium truncate max-w-[250px]">{c.name}</div>
                       <div className="flex items-center gap-1.5 mt-1 flex-wrap">
