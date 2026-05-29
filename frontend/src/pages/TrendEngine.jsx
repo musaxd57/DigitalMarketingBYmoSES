@@ -54,19 +54,19 @@ function OpportunityScore({ score }) {
 
 function HashtagCard({ tag }) {
   return (
-    <div className="bg-[#0d0d14] rounded-lg border border-white/5 p-3 hover:border-[#00ff88]/20 transition-all">
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <span className="text-[#00ff88] font-mono text-sm font-bold">{tag.tag}</span>
-        <span className="text-[#00ff88] text-xs font-mono bg-[#00ff88]/10 px-1.5 py-0.5 rounded flex-shrink-0">
+    <div className="bg-[#0d0d14] rounded-xl border border-white/5 p-4 hover:border-[#00ff88]/30 transition-all group">
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <span className="text-[#00ff88] font-mono text-base font-bold group-hover:text-[#00ff88]">{tag.tag}</span>
+        <span className="text-[#00ff88] text-sm font-mono bg-[#00ff88]/10 px-2 py-0.5 rounded-lg flex-shrink-0 border border-[#00ff88]/20">
           {tag.growth}
         </span>
       </div>
-      <div className="flex items-center justify-between text-xs text-[#555]">
-        <span className="font-mono">{tag.volume}</span>
-        <span className="capitalize">{tag.platform}</span>
+      <div className="flex items-center justify-between text-sm text-[#555] mb-2">
+        <span className="font-mono font-semibold text-[#666]">{tag.volume}</span>
+        <span className="capitalize text-xs bg-white/5 px-2 py-0.5 rounded">{tag.platform}</span>
       </div>
       {tag.bestUseCase && (
-        <p className="text-[#444] text-xs mt-2 leading-relaxed">{tag.bestUseCase}</p>
+        <p className="text-[#555] text-sm mt-2 leading-relaxed">{tag.bestUseCase}</p>
       )}
     </div>
   );
@@ -75,20 +75,20 @@ function HashtagCard({ tag }) {
 function FormatCard({ format }) {
   const difficultyColor = { easy: '#00ff88', medium: '#ffd700', hard: '#ff8c00' };
   return (
-    <div className="bg-[#0d0d14] rounded-lg border border-white/5 p-4 space-y-2">
+    <div className="bg-[#0d0d14] rounded-xl border border-white/5 p-5 space-y-3">
       <div className="flex items-start justify-between">
-        <h4 className="text-white text-sm font-semibold">{format.format}</h4>
-        <span className="text-xs font-mono px-2 py-0.5 rounded"
+        <h4 className="text-white text-base font-bold">{format.format}</h4>
+        <span className="text-sm font-mono px-2.5 py-1 rounded-lg"
           style={{ color: difficultyColor[format.difficulty], backgroundColor: `${difficultyColor[format.difficulty]}15` }}>
           {format.difficulty}
         </span>
       </div>
-      <p className="text-[#666] text-xs leading-relaxed">{format.description}</p>
+      <p className="text-[#666] text-sm leading-relaxed">{format.description}</p>
       {format.avgEngagementBoost && (
-        <p className="text-[#00ff88] text-xs font-mono">Engagement: {format.avgEngagementBoost}</p>
+        <p className="text-[#00ff88] text-sm font-mono font-semibold">Etkileşim artışı: {format.avgEngagementBoost}</p>
       )}
       {format.example && (
-        <p className="text-[#444] text-xs italic">"{format.example}"</p>
+        <p className="text-[#555] text-sm italic border-l-2 border-[#00ff88]/20 pl-3">"{format.example}"</p>
       )}
     </div>
   );
@@ -96,12 +96,12 @@ function FormatCard({ format }) {
 
 function HookCard({ hook }) {
   return (
-    <div className="bg-[#0d0d14] rounded-lg border border-white/5 p-3 space-y-2">
-      <p className="text-white text-sm font-medium">"{hook.hook}"</p>
+    <div className="bg-[#0d0d14] rounded-xl border border-white/5 p-4 space-y-3 hover:border-white/10 transition-all">
+      <p className="text-white text-base font-semibold leading-snug">"{hook.hook}"</p>
       <div className="flex items-center justify-between">
-        <span className="text-[#555] text-xs font-mono">{hook.pattern}</span>
+        <span className="text-[#555] text-sm font-mono bg-white/5 px-2 py-0.5 rounded">{hook.pattern}</span>
         {hook.avgRetentionBoost && (
-          <span className="text-[#00ff88] text-xs font-mono">{hook.avgRetentionBoost} retention</span>
+          <span className="text-[#00ff88] text-sm font-mono font-semibold">{hook.avgRetentionBoost} izlenme</span>
         )}
       </div>
     </div>
@@ -295,7 +295,7 @@ export default function TrendEngine() {
                     <span className="text-xs text-[#555] font-mono">#{report.niche}</span>
                   )}
                 </div>
-                <p className="text-[#888] text-sm leading-relaxed max-w-2xl">{report.summary}</p>
+                <p className="text-[#aaa] text-base leading-relaxed max-w-2xl">{report.summary}</p>
               </div>
               {report.opportunity_score && <OpportunityScore score={report.opportunity_score} />}
             </div>

@@ -7,16 +7,33 @@ import { analyticsAPI, reportsAPI } from '../services/api';
 import KPICard from '../components/KPICard';
 import { format, subDays } from 'date-fns';
 
+const fmt = {
+  currency: (v) => `$${parseFloat(v || 0).toFixed(2)}`,
+  pct: (v) => `${(parseFloat(v || 0) * 100).toFixed(2)}%`,
+  x: (v) => `${parseFloat(v || 0).toFixed(2)}x`,
+  int: (v) => parseInt(v || 0).toLocaleString('tr-TR'),
+};
+
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
+  const formatVal = (dataKey, val) => {
+    if (dataKey === 'spend' || dataKey === 'cpa' || dataKey === 'cpc') return fmt.currency(val);
+    if (dataKey === 'roas') return fmt.x(val);
+    if (dataKey === 'ctr') return fmt.pct(val);
+    return fmt.int(val);
+  };
   return (
-    <div className="bg-[#1a1a24] border border-white/10 rounded-lg p-3 shadow-xl">
-      <p className="text-[#888] text-xs mb-2 font-mono">{label}</p>
+    <div className="bg-[#1a1a24] border border-white/10 rounded-xl p-3 shadow-2xl min-w-[140px]">
+      <p className="text-[#666] text-xs mb-2 font-mono border-b border-white/5 pb-1.5">{label}</p>
       {payload.map((entry) => (
-        <div key={entry.dataKey} className="flex items-center gap-2 text-xs">
-          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: entry.color }} />
-          <span className="text-[#666]">{entry.name}:</span>
-          <span className="font-bold font-mono" style={{ color: entry.color }}>{String(entry.value)}</span>
+        <div key={entry.dataKey} className="flex items-center justify-between gap-4 text-xs py-0.5">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: entry.color }} />
+            <span className="text-[#666]">{entry.name}</span>
+          </div>
+          <span className="font-bold font-mono" style={{ color: entry.color }}>
+            {formatVal(entry.dataKey, entry.value)}
+          </span>
         </div>
       ))}
     </div>
@@ -24,12 +41,12 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 const METRICS_CONFIG = [
-  { key: 'spend', label: 'Spend', color: '#00aaff', format: (v) => `$${parseFloat(v).toFixed(2)}` },
-  { key: 'roas', label: 'ROAS', color: '#00ff88', format: (v) => `${parseFloat(v).toFixed(2)}x` },
-  { key: 'ctr', label: 'CTR', color: '#ffd700', format: (v) => `${(parseFloat(v) * 100).toFixed(2)}%` },
-  { key: 'cpa', label: 'CPA', color: '#ff8c00', format: (v) => `$${parseFloat(v).toFixed(2)}` },
-  { key: 'conversions', label: 'Conversions', color: '#9d4edd', format: (v) => parseInt(v).toLocaleString() },
-  { key: 'impressions', label: 'Impressions', color: '#36cfc9', format: (v) => parseInt(v).toLocaleString() },
+  { key: 'spend', label: 'Harcama', color: '#00aaff', fmt: fmt.currency },
+  { key: 'roas', label: 'ROAS', color: '#00ff88', fmt: fmt.x },
+  { key: 'ctr', label: 'CTR', color: '#ffd700', fmt: fmt.pct },
+  { key: 'cpa', label: 'CPA', color: '#ff8c00', fmt: fmt.currency },
+  { key: 'conversions', label: 'Dönüşüm', color: '#9d4edd', fmt: fmt.int },
+  { key: 'impressions', label: 'Gösterim', color: '#36cfc9', fmt: fmt.int },
 ];
 
 export default function Analytics() {
@@ -38,14 +55,14 @@ export default function Analytics() {
   const [topCampaigns, setTopCampaigns] = useState([]);
   const [ltv, setLtv] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState('30d');
+  const [dateRange, setDateRange] = useState('30g');
   const [selectedMetrics, setSelectedMetrics] = useState(['spend', 'roas', 'ctr']);
   const [chartType, setChartType] = useState('area');
   const [sendingReport, setSendingReport] = useState(false);
 
   const downloadCSV = () => {
     if (!timeseries.length) return;
-    const headers = ['Tarih', 'Harcama', 'Gelir', 'ROAS', 'CTR%', 'CPC', 'CPA', 'Tiklama', 'Gösterim', 'Dönüşüm'];
+    const headers = ['Tarih', 'Harcama', 'Gelir', 'ROAS', 'CTR%', 'CPC', 'CPA', 'Tıklama', 'Gösterim', 'Dönüşüm'];
     const rows = timeseries.map(r => [
       r.date,
       parseFloat(r.spend || 0).toFixed(2),
@@ -63,7 +80,7 @@ export default function Analytics() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `analytics-${dateRange}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.download = `analitik-${dateRange}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -82,7 +99,7 @@ export default function Analytics() {
 
   const getDateRange = (range) => {
     const end = format(new Date(), 'yyyy-MM-dd');
-    const days = { '7d': 7, '14d': 14, '30d': 30, '90d': 90 }[range] || 30;
+    const days = { '7g': 7, '14g': 14, '30g': 30, '90g': 90 }[range] || 30;
     return { startDate: format(subDays(new Date(), days), 'yyyy-MM-dd'), endDate: end };
   };
 
@@ -97,7 +114,6 @@ export default function Analytics() {
           analyticsAPI.topCampaigns({ startDate, endDate, metric: 'roas', limit: 10 }),
           analyticsAPI.ltv({ startDate, endDate }),
         ]);
-
         if (oRes.status === 'fulfilled') setOverview(oRes.value.data);
         if (tRes.status === 'fulfilled') setTimeseries(tRes.value.data.data || []);
         if (topRes.status === 'fulfilled') setTopCampaigns(topRes.value.data.campaigns || []);
@@ -117,18 +133,33 @@ export default function Analytics() {
     );
   };
 
-  const ChartComponent = chartType === 'area' ? AreaChart : chartType === 'bar' ? BarChart : LineChart;
+  const activeMetrics = METRICS_CONFIG.filter((mc) => selectedMetrics.includes(mc.key));
+
+  const renderChartSeries = (mc) => {
+    const commonProps = { key: mc.key, type: 'monotone', dataKey: mc.key, stroke: mc.color, strokeWidth: 2, dot: false, name: mc.label };
+    if (chartType === 'area') {
+      return (
+        <Area {...commonProps} fill={`url(#grad-${mc.key})`} fillOpacity={1} />
+      );
+    }
+    if (chartType === 'bar') {
+      return <Bar key={mc.key} dataKey={mc.key} fill={mc.color} name={mc.label} radius={[3, 3, 0, 0]} />;
+    }
+    return <Line {...commonProps} />;
+  };
+
+  const ChartWrapper = chartType === 'area' ? AreaChart : chartType === 'bar' ? BarChart : LineChart;
 
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-white text-xl font-semibold">Analytics</h1>
-          <p className="text-[#555] text-sm">Detailed performance analysis</p>
+          <h1 className="text-white text-xl font-semibold">Analitik</h1>
+          <p className="text-[#555] text-sm">Detaylı performans analizi</p>
         </div>
         <div className="flex items-center gap-2">
-          {['7d', '14d', '30d', '90d'].map((r) => (
+          {['7g', '14g', '30g', '90g'].map((r) => (
             <button key={r} onClick={() => setDateRange(r)}
               className={`px-3 py-1.5 rounded text-xs font-mono transition-all
                 ${dateRange === r ? 'bg-[#00ff88]/10 text-[#00ff88] border border-[#00ff88]/30'
@@ -157,8 +188,8 @@ export default function Analytics() {
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
         {[
           { title: 'ROAS', value: m.roas, format: 'multiplier', change: overview?.changes?.roas },
-          { title: 'Total Spend', value: m.totalSpend, format: 'currency', change: overview?.changes?.spend },
-          { title: 'Revenue', value: m.totalRevenue, format: 'currency' },
+          { title: 'Toplam Harcama', value: m.totalSpend, format: 'currency', change: overview?.changes?.spend },
+          { title: 'Gelir', value: m.totalRevenue, format: 'currency' },
           { title: 'CTR', value: m.ctr, format: 'percent', change: overview?.changes?.ctr },
           { title: 'CPA', value: m.cpa, format: 'currency', change: overview?.changes?.cpa },
           { title: 'CPC', value: m.cpc, format: 'currency' },
@@ -171,44 +202,38 @@ export default function Analytics() {
       {/* LTV Metrics */}
       {ltv && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <KPICard title="Avg. Order Value" value={ltv.aov} format="currency" loading={loading} accentColor="#9d4edd" />
-          <KPICard title="Avg. CAC" value={ltv.avgCac} format="currency" loading={loading} accentColor="#ff8c00" />
-          <KPICard title="Est. LTV" value={ltv.estimatedLtv} format="currency" loading={loading} accentColor="#00ff88" />
-          <KPICard title="LTV:CAC Ratio" value={ltv.ltvCacRatio} format="multiplier" loading={loading} accentColor="#ffd700" />
+          <KPICard title="Ort. Sipariş Değeri" value={ltv.aov} format="currency" loading={loading} accentColor="#9d4edd" />
+          <KPICard title="Ort. Müşteri Edinim" value={ltv.avgCac} format="currency" loading={loading} accentColor="#ff8c00" />
+          <KPICard title="Tahmini LTV" value={ltv.estimatedLtv} format="currency" loading={loading} accentColor="#00ff88" />
+          <KPICard title="LTV:CAC Oranı" value={ltv.ltvCacRatio} format="multiplier" loading={loading} accentColor="#ffd700" />
         </div>
       )}
 
       {/* Timeseries Chart */}
       <div className="bg-[#111118] rounded-xl border border-white/5 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-          <h2 className="text-white font-semibold text-sm">Performance Over Time</h2>
+          <h2 className="text-white font-semibold text-sm">Zamana Göre Performans</h2>
           <div className="flex flex-wrap items-center gap-2">
-            {/* Metric toggles */}
             {METRICS_CONFIG.map((mc) => (
               <button
                 key={mc.key}
                 onClick={() => toggleMetric(mc.key)}
-                className={`px-2.5 py-1 rounded text-xs font-mono transition-all border
-                  ${selectedMetrics.includes(mc.key)
-                    ? 'border-opacity-30 bg-opacity-10'
-                    : 'border-white/5 text-[#444] hover:text-[#666]'
-                  }`}
+                className={`px-2.5 py-1 rounded text-xs font-mono transition-all border`}
                 style={selectedMetrics.includes(mc.key) ? {
                   borderColor: `${mc.color}44`,
                   backgroundColor: `${mc.color}15`,
                   color: mc.color,
-                } : {}}
+                } : { borderColor: 'rgba(255,255,255,0.05)', color: '#444' }}
               >
                 {mc.label}
               </button>
             ))}
-            {/* Chart type selector */}
             <div className="flex items-center border border-white/5 rounded overflow-hidden">
               {[['area', '~'], ['bar', '▌'], ['line', '—']].map(([type, symbol]) => (
                 <button
                   key={type}
                   onClick={() => setChartType(type)}
-                  className={`px-2.5 py-1 text-xs transition-all ${chartType === type ? 'bg-white/10 text-white' : 'text-[#444]'}`}
+                  className={`px-2.5 py-1 text-xs transition-all ${chartType === type ? 'bg-white/10 text-white' : 'text-[#444] hover:text-[#666]'}`}
                 >
                   {symbol}
                 </button>
@@ -219,13 +244,15 @@ export default function Analytics() {
 
         {loading ? (
           <div className="h-64 bg-white/3 animate-pulse rounded-lg" />
+        ) : timeseries.length === 0 ? (
+          <div className="h-64 flex items-center justify-center text-[#333] text-sm">Veri yok</div>
         ) : (
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={timeseries} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+            <ChartWrapper data={timeseries} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
               <defs>
-                {METRICS_CONFIG.filter((mc) => selectedMetrics.includes(mc.key)).map((mc) => (
+                {activeMetrics.map((mc) => (
                   <linearGradient key={mc.key} id={`grad-${mc.key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={mc.color} stopOpacity={0.2} />
+                    <stop offset="5%" stopColor={mc.color} stopOpacity={0.25} />
                     <stop offset="95%" stopColor={mc.color} stopOpacity={0} />
                   </linearGradient>
                 ))}
@@ -233,51 +260,53 @@ export default function Analytics() {
               <CartesianGrid stroke="rgba(255,255,255,0.03)" vertical={false} />
               <XAxis
                 dataKey="date"
-                tickFormatter={(d) => { try { return format(new Date(d), 'MMM d'); } catch { return d; } }}
+                tickFormatter={(d) => { try { return format(new Date(d), 'd MMM'); } catch { return d; } }}
                 tick={{ fill: '#444', fontSize: 10, fontFamily: 'monospace' }}
-                axisLine={false}
-                tickLine={false}
+                axisLine={false} tickLine={false}
               />
-              <YAxis tick={{ fill: '#444', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#444', fontSize: 10 }} axisLine={false} tickLine={false} width={45} />
               <Tooltip content={<CustomTooltip />} />
-              <Legend
-                formatter={(value) => <span style={{ color: '#666', fontSize: 11 }}>{value}</span>}
-              />
-              {METRICS_CONFIG
-                .filter((mc) => selectedMetrics.includes(mc.key))
-                .map((mc) => (
-                  <Line
-                    key={mc.key}
-                    type="monotone"
-                    dataKey={mc.key}
-                    stroke={mc.color}
-                    strokeWidth={2}
-                    dot={false}
-                    name={mc.label}
-                  />
-                ))}
-            </LineChart>
+              <Legend formatter={(value) => <span style={{ color: '#666', fontSize: 11 }}>{value}</span>} />
+              {activeMetrics.map((mc) => renderChartSeries(mc))}
+            </ChartWrapper>
           </ResponsiveContainer>
         )}
       </div>
 
+      {/* Summary stats row */}
+      {timeseries.length > 0 && !loading && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Toplam Tıklama', value: fmt.int(timeseries.reduce((s, r) => s + (parseInt(r.clicks) || 0), 0)), color: '#00aaff' },
+            { label: 'Toplam Gösterim', value: fmt.int(timeseries.reduce((s, r) => s + (parseInt(r.impressions) || 0), 0)), color: '#36cfc9' },
+            { label: 'Toplam Dönüşüm', value: fmt.int(timeseries.reduce((s, r) => s + (parseInt(r.conversions) || 0), 0)), color: '#9d4edd' },
+            { label: 'Ort. Günlük Harcama', value: fmt.currency(timeseries.reduce((s, r) => s + parseFloat(r.spend || 0), 0) / (timeseries.length || 1)), color: '#ffd700' },
+          ].map((stat) => (
+            <div key={stat.label} className="bg-[#111118] rounded-xl border border-white/5 p-4">
+              <p className="text-[#444] text-xs font-mono mb-1">{stat.label}</p>
+              <p className="font-bold font-mono text-lg" style={{ color: stat.color }}>{stat.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Top Campaigns Table */}
       <div className="bg-[#111118] rounded-xl border border-white/5 overflow-hidden">
         <div className="px-5 py-4 border-b border-white/5">
-          <h2 className="text-white font-semibold text-sm">Top Campaigns by ROAS</h2>
+          <h2 className="text-white font-semibold text-sm">ROAS'a Göre En İyi Kampanyalar</h2>
         </div>
         {loading ? (
           <div className="p-5 space-y-3">
             {[...Array(5)].map((_, i) => <div key={i} className="h-10 bg-white/3 animate-pulse rounded" />)}
           </div>
         ) : topCampaigns.length === 0 ? (
-          <div className="p-10 text-center text-[#444] text-sm">No campaign data available</div>
+          <div className="p-10 text-center text-[#444] text-sm">Kampanya verisi bulunamadı</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/5">
-                  {['Rank', 'Campaign', 'Platform', 'Spend', 'Revenue', 'ROAS', 'CTR', 'CPA', 'Conv.'].map((h) => (
+                  {['#', 'Kampanya', 'Platform', 'Harcama', 'Gelir', 'ROAS', 'CTR', 'CPA', 'Dönüşüm'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-[#444] text-xs font-mono">{h}</th>
                   ))}
                 </tr>
@@ -287,17 +316,17 @@ export default function Analytics() {
                   <tr key={c.id} className="hover:bg-white/2 transition-colors">
                     <td className="px-4 py-3 text-[#444] text-xs font-mono">#{idx + 1}</td>
                     <td className="px-4 py-3 text-white text-sm max-w-[200px] truncate">{c.name}</td>
-                    <td className="px-4 py-3 text-[#888] text-xs font-mono capitalize">{c.platform}</td>
+                    <td className="px-4 py-3 text-xs font-mono capitalize" style={{ color: { meta: '#1877f2', google: '#4285f4', tiktok: '#ff0050' }[c.platform] || '#888' }}>{c.platform?.toUpperCase()}</td>
                     <td className="px-4 py-3 text-[#888] text-sm font-mono">${parseFloat(c.spend || 0).toFixed(0)}</td>
                     <td className="px-4 py-3 text-[#888] text-sm font-mono">${parseFloat(c.revenue || 0).toFixed(0)}</td>
                     <td className="px-4 py-3">
-                      <span className={`text-sm font-bold font-mono ${parseFloat(c.roas) >= 2 ? 'text-[#00ff88]' : 'text-[#ffd700]'}`}>
+                      <span className={`text-sm font-bold font-mono ${parseFloat(c.roas) >= 2 ? 'text-[#00ff88]' : parseFloat(c.roas) >= 1 ? 'text-[#ffd700]' : 'text-[#888]'}`}>
                         {parseFloat(c.roas || 0).toFixed(2)}x
                       </span>
                     </td>
                     <td className="px-4 py-3 text-[#888] text-sm font-mono">{(parseFloat(c.ctr || 0) * 100).toFixed(2)}%</td>
                     <td className="px-4 py-3 text-[#888] text-sm font-mono">${parseFloat(c.cpa || 0).toFixed(2)}</td>
-                    <td className="px-4 py-3 text-[#888] text-sm font-mono">{parseInt(c.conversions || 0)}</td>
+                    <td className="px-4 py-3 text-[#888] text-sm font-mono">{parseInt(c.conversions || 0).toLocaleString('tr-TR')}</td>
                   </tr>
                 ))}
               </tbody>

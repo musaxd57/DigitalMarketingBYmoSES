@@ -82,13 +82,15 @@ export default function Sidebar() {
     <aside className="w-64 bg-[#0d0d14] border-r border-white/5 flex flex-col h-full flex-shrink-0">
       {/* Logo */}
       <div className="px-6 py-5 border-b border-white/5">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/30 flex items-center justify-center">
-            <span className="text-[#00ff88] font-bold text-xs font-mono">AI</span>
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00ff88]/20 to-[#00aaff]/20 border border-[#00ff88]/30 flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4 text-[#00ff88]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
           </div>
-          <div>
-            <h1 className="text-white font-semibold text-sm leading-none">MktAI</h1>
-            <p className="text-[#666] text-xs mt-0.5 font-mono">v1.0.0</p>
+          <div className="min-w-0">
+            <h1 className="text-white font-bold text-sm leading-none tracking-tight">Digital Marketing</h1>
+            <p className="text-[#00ff88] text-xs mt-0.5 font-mono opacity-70">by Moses</p>
           </div>
         </div>
       </div>
