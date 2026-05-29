@@ -1,6 +1,26 @@
 import { useState, useEffect } from 'react';
 import { trendsAPI } from '../services/api';
 
+function exportReport(report) {
+  const lines = [`TREND RAPORU — ${new Date(report.report_date).toLocaleDateString('tr-TR')}`, `Platform: ${report.platform}`, ''];
+  if (report.summary) lines.push(`ÖZET\n${report.summary}`, '');
+  if (report.trending_hashtags?.length) {
+    lines.push('HASHTAGLER');
+    report.trending_hashtags.forEach(t => lines.push(`  ${t.tag} — ${t.growth} — ${t.volume}`));
+    lines.push('');
+  }
+  if (report.viral_hooks?.length) {
+    lines.push('VİRAL KANCALAR');
+    report.viral_hooks.forEach(h => lines.push(`  "${h.hook}"`));
+    lines.push('');
+  }
+  if (report.recommendations?.length) {
+    lines.push('ÖNERİLER');
+    report.recommendations.sort((a, b) => (a.priority || 99) - (b.priority || 99)).forEach((r, i) => lines.push(`  ${i + 1}. ${r.title}: ${r.action}`));
+  }
+  return lines.join('\n');
+}
+
 function OpportunityScore({ score }) {
   const s = parseFloat(score) || 0;
   const color = s >= 75 ? '#00ff88' : s >= 50 ? '#ffd700' : '#ff8c00';
@@ -96,9 +116,12 @@ export default function TrendEngine() {
   const [niche, setNiche] = useState('');
   const [language, setLanguage] = useState('tr');
   const [activeSection, setActiveSection] = useState('hashtags');
+  const [history, setHistory] = useState([]);
+  const [exported, setExported] = useState(false);
 
   useEffect(() => {
     fetchLatest();
+    fetchHistory();
   }, []);
 
   const fetchLatest = async () => {
@@ -111,6 +134,20 @@ export default function TrendEngine() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchHistory = async () => {
+    try {
+      const res = await trendsAPI.list();
+      setHistory(res.data.reports || []);
+    } catch { /* ignore */ }
+  };
+
+  const handleExport = () => {
+    if (!report) return;
+    navigator.clipboard?.writeText(exportReport(report));
+    setExported(true);
+    setTimeout(() => setExported(false), 2000);
   };
 
   const handleGenerate = async () => {
@@ -191,8 +228,39 @@ export default function TrendEngine() {
             ) : '⚡'}
             {generating ? 'Analiz ediliyor...' : 'Analiz Başlat'}
           </button>
+          {report && (
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 text-[#888] text-sm hover:text-white hover:border-white/20 transition-all"
+            >
+              {exported ? '✓ Kopyalandı' : '↑ Dışa Aktar'}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* History selector */}
+      {history.length > 1 && (
+        <div className="flex items-center gap-3">
+          <span className="text-[#555] text-xs font-mono">Geçmiş raporlar:</span>
+          <div className="flex gap-2 overflow-x-auto">
+            {history.slice(0, 6).map((r) => (
+              <button
+                key={r.id}
+                onClick={() => setReport(r)}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-mono border transition-all ${
+                  report?.id === r.id
+                    ? 'bg-[#00ff88]/10 text-[#00ff88] border-[#00ff88]/30'
+                    : 'text-[#555] border-white/5 hover:text-[#888] hover:border-white/10'
+                }`}
+              >
+                {new Date(r.report_date).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric' })}
+                {r.platform && <span className="ml-1 opacity-60 capitalize">{r.platform}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

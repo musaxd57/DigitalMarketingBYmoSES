@@ -361,6 +361,49 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* Smart Insights */}
+      {!loading && (() => {
+        const insights = [];
+        if (!metrics.totalSpend || metrics.totalSpend === 0) {
+          insights.push({ color: '#00aaff', icon: '🔗', title: 'Reklam hesabı bağla', desc: 'Verilerini görmek için Meta, Google veya TikTok hesabını bağla.', href: '/settings' });
+        } else {
+          if ((metrics.ctr || 0) < 0.01 && metrics.totalImpressions > 0) {
+            insights.push({ color: '#ffd700', icon: '⚠', title: 'CTR düşük', desc: `CTR ${((metrics.ctr || 0) * 100).toFixed(2)}% — reklam başlık ve metinlerini yenile.`, href: '/creative' });
+          }
+          if ((metrics.roas || 0) > 0 && (metrics.roas || 0) < 2) {
+            insights.push({ color: '#ff8c00', icon: '📉', title: 'ROAS iyileştirilebilir', desc: `Şu anki ROAS ${(metrics.roas || 0).toFixed(2)}x — hedef bütçe dağılımını optimize et.`, href: '/analytics' });
+          }
+          if ((metrics.roas || 0) >= 4) {
+            insights.push({ color: '#00ff88', icon: '🚀', title: 'Harika performans!', desc: `ROAS ${(metrics.roas || 0).toFixed(2)}x — bütçeyi artırarak kazancı ölçeklendir.`, href: '/campaigns' });
+          }
+          if (platformBreakdown.length === 1) {
+            insights.push({ color: '#9d4edd', icon: '📊', title: 'Tek platformdasın', desc: 'Riski azaltmak için Meta, Google veya TikTok\'a da yayıl.', href: '/settings' });
+          }
+          if ((metrics.cpa || 0) > 50 && metrics.totalConversions > 0) {
+            insights.push({ color: '#ff8c00', icon: '💸', title: 'CPA yüksek', desc: `Dönüşüm başına $${(metrics.cpa || 0).toFixed(0)} harcıyorsun — hedeflemeyi daralt.`, href: '/campaigns' });
+          }
+        }
+        if (insights.length === 0) return null;
+        return (
+          <div className="bg-[#111118] rounded-xl border border-white/5 p-5">
+            <h2 className="text-white font-semibold text-sm mb-4">Akıllı Öneriler</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {insights.map((ins, i) => (
+                <a key={i} href={ins.href}
+                  className="flex items-start gap-3 p-3 rounded-lg border transition-all hover:bg-white/3"
+                  style={{ borderColor: `${ins.color}20`, backgroundColor: `${ins.color}08` }}>
+                  <span className="text-lg flex-shrink-0">{ins.icon}</span>
+                  <div>
+                    <p className="text-white text-xs font-semibold">{ins.title}</p>
+                    <p className="text-[#666] text-xs mt-0.5 leading-relaxed">{ins.desc}</p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Recent Campaigns Table */}
       <div className="bg-[#111118] rounded-xl border border-white/5 overflow-hidden">
         <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">

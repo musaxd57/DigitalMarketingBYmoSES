@@ -8,6 +8,7 @@ const TABS = ['Ad Copy', 'Video Pipeline', 'Voiceover', 'Score Library'];
 export default function Creative() {
   const [activeTab, setActiveTab] = useState(0);
   const [creatives, setCreatives] = useState([]);
+  const [copiedVariant, setCopiedVariant] = useState(null);
   const socket = useSocket();
 
   // Ad Copy state
@@ -301,17 +302,58 @@ export default function Creative() {
                 <p className="text-[#555] text-sm">Reklam metni hazırlanıyor...</p>
               </div>
             )}
+            {copyResults?.variants?.length > 0 && (
+              <div className="flex items-center justify-between">
+                <p className="text-[#555] text-xs font-mono">{copyResults.variants.length} varyant oluşturuldu</p>
+                <button
+                  onClick={() => {
+                    const all = copyResults.variants.map(v =>
+                      `--- VARYANT ${v.variant} ---\nBAŞLIK: ${v.headline}\nKANCA: ${v.hook || ''}\nMETİN: ${v.primaryText}\nCTA: ${v.callToAction}`
+                    ).join('\n\n');
+                    navigator.clipboard?.writeText(all);
+                    setCopiedVariant('all');
+                    setTimeout(() => setCopiedVariant(null), 2000);
+                  }}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-[#888] hover:text-white hover:border-white/20 transition-all"
+                >
+                  {copiedVariant === 'all' ? '✓ Kopyalandı' : 'Tümünü Kopyala'}
+                </button>
+              </div>
+            )}
             {copyResults?.variants?.map((v) => (
               <div key={v.variant} className="bg-[#111118] rounded-xl border border-white/5 p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[#00ff88] text-xs font-mono">VARYANT {v.variant}</span>
-                  {v.uniqueAngle && (
-                    <span className="text-[#555] text-xs bg-white/5 px-2 py-0.5 rounded">{v.uniqueAngle}</span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {v.uniqueAngle && (
+                      <span className="text-[#555] text-xs bg-white/5 px-2 py-0.5 rounded">{v.uniqueAngle}</span>
+                    )}
+                    <button
+                      onClick={() => {
+                        navigator.clipboard?.writeText(
+                          `BAŞLIK: ${v.headline}\n\nKANCA: ${v.hook || ''}\n\nMETİN: ${v.primaryText}\n\nCTA: ${v.callToAction}`
+                        );
+                        setCopiedVariant(v.variant);
+                        setTimeout(() => setCopiedVariant(null), 2000);
+                      }}
+                      className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                        copiedVariant === v.variant
+                          ? 'border-[#00ff88]/40 text-[#00ff88] bg-[#00ff88]/10'
+                          : 'border-white/10 text-[#555] hover:text-[#888] hover:border-white/20'
+                      }`}
+                    >
+                      {copiedVariant === v.variant ? '✓ Kopyalandı' : 'Kopyala'}
+                    </button>
+                  </div>
                 </div>
                 {v.headline && (
                   <div>
-                    <p className="text-[#444] text-xs font-mono mb-1">BAŞLIK</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[#444] text-xs font-mono">BAŞLIK</p>
+                      <span className={`text-xs font-mono ${v.headline.length > 40 ? 'text-[#ff8c00]' : 'text-[#444]'}`}>
+                        {v.headline.length}/40
+                      </span>
+                    </div>
                     <p className="text-white font-semibold">{v.headline}</p>
                   </div>
                 )}
@@ -323,7 +365,12 @@ export default function Creative() {
                 )}
                 {v.primaryText && (
                   <div>
-                    <p className="text-[#444] text-xs font-mono mb-1">ANA METİN</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[#444] text-xs font-mono">ANA METİN</p>
+                      <span className={`text-xs font-mono ${v.primaryText.length > 125 ? 'text-[#ff8c00]' : 'text-[#444]'}`}>
+                        {v.primaryText.length}/125
+                      </span>
+                    </div>
                     <p className="text-[#888] text-sm leading-relaxed">{v.primaryText}</p>
                   </div>
                 )}
@@ -335,14 +382,6 @@ export default function Creative() {
                     </span>
                   </div>
                 )}
-                <button
-                  onClick={() => navigator.clipboard?.writeText(
-                    `${v.headline}\n\n${v.primaryText}\n\nCTA: ${v.callToAction}`
-                  )}
-                  className="text-[#444] text-xs hover:text-[#888] transition-colors"
-                >
-                  Kopyala
-                </button>
               </div>
             ))}
           </div>
