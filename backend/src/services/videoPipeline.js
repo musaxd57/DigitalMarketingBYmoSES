@@ -114,39 +114,35 @@ Return ONLY valid JSON with these exact keys:
       console.log('[VideoPipeline] imagePrompt:', prompts.imagePrompt);
       console.log('[VideoPipeline] motionPrompt:', prompts.motionPrompt);
 
-      // ── Step 2: DALL-E 3 HD Starting Frame ───────────────────────────────────
-      console.log('[VideoPipeline] Step 2: DALL-E 3 HD image generation...');
+      // ── Step 2: GPT Image 1 (GPT Image 2) Starting Frame ─────────────────────
+      console.log('[VideoPipeline] Step 2: GPT Image generation...');
       let promptImage;
 
       try {
-        const enhancedImagePrompt = `${prompts.imagePrompt}. Clean minimal background, isolated product shot, no busy environments, no distracting elements, seamless studio backdrop, commercial advertising photography, ultra-high resolution, sharp focus, professional color grading, no text, no watermarks, no people, photorealistic.`;
+        const enhancedImagePrompt = `${prompts.imagePrompt}. Clean minimal background, isolated product shot, no busy environments, seamless studio backdrop, commercial advertising photography, ultra-high resolution, sharp focus, professional color grading, no text, no watermarks, photorealistic.`;
 
-        const dalleRes = await axios.post(
+        const imageRes = await axios.post(
           'https://api.openai.com/v1/images/generations',
           {
-            model: 'dall-e-3',
+            model: 'gpt-image-1',
             prompt: enhancedImagePrompt,
             n: 1,
-            size: dalleSize,
-            quality: 'hd',
+            size: aspectRatio === '9:16' ? '1024x1536' : '1536x1024',
+            quality: 'high',
           },
           {
             headers: { Authorization: `Bearer ${this.openaiKey}`, 'Content-Type': 'application/json' },
             timeout: 120000,
           }
         );
-        promptImage = dalleRes.data.data[0].url;
-        console.log('[VideoPipeline] Step 2 done. DALL-E 3 HD image generated.');
-      } catch (dalleErr) {
-        console.warn('[VideoPipeline] DALL-E 3 failed:', dalleErr.response?.data?.error?.message || dalleErr.message);
-        const seed = Math.floor(Math.random() * 9999);
-        const [pw, ph] = dalleSize.split('x').map(Number);
-        const imgRes = await axios.get(
-          `https://picsum.photos/seed/${seed}/${pw}/${ph}`,
-          { responseType: 'arraybuffer', timeout: 15000 }
-        );
-        promptImage = `data:image/jpeg;base64,${Buffer.from(imgRes.data).toString('base64')}`;
-        console.log('[VideoPipeline] Using placeholder image as fallback.');
+
+        const b64 = imageRes.data.data[0].b64_json;
+        promptImage = `data:image/png;base64,${b64}`;
+        console.log('[VideoPipeline] Step 2 done. GPT Image 1 generated.');
+      } catch (imgErr) {
+        const errMsg = imgErr.response?.data?.error?.message || imgErr.message;
+        console.error('[VideoPipeline] Image generation failed:', errMsg);
+        throw new Error(`Image generation failed: ${errMsg}`);
       }
 
       // ── Step 3: Runway Gen-4 Turbo Image-to-Video ────────────────────────────
