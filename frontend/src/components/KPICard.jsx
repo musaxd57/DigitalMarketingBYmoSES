@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 export default function KPICard({
   title,
   value,
@@ -10,6 +12,7 @@ export default function KPICard({
   accentColor = '#00ff88',
   loading = false,
 }) {
+  const [hovered, setHovered] = useState(false);
   const formatValue = (val) => {
     if (val === null || val === undefined) return '--';
     const num = parseFloat(val);
@@ -49,8 +52,10 @@ export default function KPICard({
 
   return (
     <div
-      className="relative rounded-xl border bg-[#111118] p-5 overflow-hidden transition-all duration-200 hover:border-white/10"
-      style={{ borderColor: 'rgba(255,255,255,0.05)' }}
+      className="relative rounded-xl border bg-[#111118] p-5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-black/30 group"
+      style={{ borderColor: hovered ? `${accentColor}4d` : 'rgba(255,255,255,0.05)' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       {/* Subtle glow accent */}
       <div
@@ -73,7 +78,7 @@ export default function KPICard({
 
       {/* Value */}
       {loading ? (
-        <div className="h-8 w-32 bg-white/5 animate-pulse rounded-lg mb-2" />
+        <div className="skeleton h-8 w-32 mb-2" />
       ) : (
         <div className="flex items-baseline gap-1 mb-2">
           {prefix && <span className="text-[#888] text-lg">{prefix}</span>}
@@ -113,7 +118,7 @@ export default function KPICard({
 
       {/* Bottom border accent */}
       <div
-        className="absolute bottom-0 left-0 h-px w-full opacity-20"
+        className="absolute bottom-0 left-0 h-[1.5px] w-full opacity-30"
         style={{ background: `linear-gradient(to right, transparent, ${accentColor}, transparent)` }}
       />
     </div>

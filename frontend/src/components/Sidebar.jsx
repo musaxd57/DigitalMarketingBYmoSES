@@ -79,11 +79,11 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-64 bg-[#0d0d14] border-r border-white/5 flex flex-col h-full flex-shrink-0">
+    <aside className="w-[260px] bg-[#0d0d14] border-r border-white/5 flex flex-col h-full flex-shrink-0">
       {/* Logo */}
-      <div className="px-6 py-5 border-b border-white/5">
+      <div className="px-6 py-5 border-b border-white/5" style={{ background: 'linear-gradient(to bottom, rgba(0,255,136,0.03), transparent)' }}>
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00ff88]/20 to-[#00aaff]/20 border border-[#00ff88]/30 flex items-center justify-center flex-shrink-0">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#00ff88]/20 to-[#00aaff]/20 border border-[#00ff88]/30 flex items-center justify-center flex-shrink-0">
             <svg className="w-4 h-4 text-[#00ff88]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
             </svg>
@@ -120,12 +120,13 @@ export default function Sidebar() {
             to={item.path}
             end={item.path === '/'}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 group relative
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 group relative
               ${isActive
                 ? 'bg-[#00ff88]/10 text-[#00ff88] border border-[#00ff88]/20'
                 : 'text-[#888] hover:text-white hover:bg-white/5 border border-transparent'
               }`
             }
+            style={({ isActive }) => isActive ? { boxShadow: '0 0 20px rgba(0,255,136,0.08)' } : {}}
           >
             {({ isActive }) => (
               <>
@@ -152,13 +153,19 @@ export default function Sidebar() {
         <p className="text-[#444] text-xs font-mono uppercase tracking-wider mb-2">Platformlar</p>
         <div className="space-y-1.5">
           {[
-            { name: 'Meta Ads', color: '#1877f2' },
-            { name: 'Google Ads', color: '#4285f4' },
-            { name: 'TikTok Ads', color: '#ff0050' },
+            { name: 'Meta Ads', color: '#1877f2', connected: true },
+            { name: 'Google Ads', color: '#4285f4', connected: true },
+            { name: 'TikTok Ads', color: '#ff0050', connected: false },
           ].map((p) => (
             <div key={p.name} className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#333]" style={{ boxShadow: `0 0 4px ${p.color}44` }} />
-              <span className="text-[#555] text-xs">{p.name}</span>
+              <div
+                className={`w-1.5 h-1.5 rounded-full ${p.connected ? 'animate-pulse' : ''}`}
+                style={{
+                  backgroundColor: p.connected ? '#00ff88' : '#333',
+                  boxShadow: p.connected ? '0 0 6px rgba(0,255,136,0.6)' : `0 0 4px ${p.color}44`,
+                }}
+              />
+              <span className={`text-xs ${p.connected ? 'text-[#666]' : 'text-[#444]'}`}>{p.name}</span>
             </div>
           ))}
         </div>

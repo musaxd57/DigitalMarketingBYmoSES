@@ -123,7 +123,7 @@ export default function Dashboard() {
   const changes = overview?.changes || {};
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 page-enter">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -147,7 +147,7 @@ export default function Dashboard() {
           <button
             onClick={handleSeedDemo}
             disabled={seeding}
-            className="px-3 py-1.5 rounded-lg text-xs font-mono transition-all text-[#ffd700] border border-[#ffd700]/20 hover:bg-[#ffd700]/10 disabled:opacity-50 flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-lg text-xs font-mono transition-all text-[#ffd700] border border-[#ffd700]/20 hover:bg-[#ffd700]/10 disabled:opacity-50 flex items-center gap-1.5 hover:scale-105 active:scale-95"
           >
             {seeding ? <span className="w-3 h-3 border border-[#ffd700] border-t-transparent rounded-full animate-spin inline-block" /> : '✦'}
             {seeding ? 'Yükleniyor...' : 'Demo Veri'}
@@ -156,7 +156,7 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 transition-all">
         <KPICard
           title="ROAS"
           value={metrics.roas}
@@ -224,7 +224,7 @@ export default function Dashboard() {
             </div>
           </div>
           {loading ? (
-            <div className="h-48 bg-white/3 animate-pulse rounded-lg" />
+            <div className="skeleton h-48" />
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={timeseries} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
@@ -278,10 +278,17 @@ export default function Dashboard() {
         <div className="bg-[#111118] rounded-xl border border-white/5 p-5">
           <h2 className="text-white font-semibold text-sm mb-4">Platforma Göre Harcama</h2>
           {loading ? (
-            <div className="h-48 bg-white/3 animate-pulse rounded-lg" />
+            <div className="skeleton h-48" />
           ) : platformBreakdown.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-[#444] text-sm">
-              Veri yok
+            <div className="h-48 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-3 text-center">
+                <div className="w-12 h-12 rounded-xl bg-[#111118] border border-white/5 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-[#333]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                <p className="text-[#444] text-sm">Platform verisi yok</p>
+              </div>
             </div>
           ) : (
             <>
@@ -328,7 +335,7 @@ export default function Dashboard() {
       <div className="bg-[#111118] rounded-xl border border-white/5 p-5">
         <h2 className="text-white font-semibold text-sm mb-4">CTR & Dönüşümler (Son {dateRange})</h2>
         {loading ? (
-          <div className="h-32 bg-white/3 animate-pulse rounded-lg" />
+          <div className="skeleton h-32" />
         ) : (
           <ResponsiveContainer width="100%" height={150}>
             <LineChart data={timeseries} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
@@ -416,13 +423,22 @@ export default function Dashboard() {
           {loading ? (
             <div className="p-5 space-y-3">
               {[...Array(3)].map((_, i) => (
-                <div key={i} className="h-10 bg-white/3 animate-pulse rounded" />
+                <div key={i} className="skeleton h-10" />
               ))}
             </div>
           ) : campaigns.length === 0 ? (
-            <div className="p-10 text-center">
-              <p className="text-[#444] text-sm">Henüz kampanya yok</p>
-              <p className="text-[#333] text-xs mt-1">Kampanyaları görmek için bir reklam hesabı bağla</p>
+            <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-[#111118] border border-white/5 flex items-center justify-center mb-2">
+                <svg className="w-8 h-8 text-[#333]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                </svg>
+              </div>
+              <h3 className="text-white text-base font-semibold">Henüz kampanya yok</h3>
+              <p className="text-[#555] text-sm max-w-xs leading-relaxed">Reklam hesabı bağlayarak kampanyalarını buraya getir</p>
+              <a href="/settings" className="mt-2 px-4 py-2 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/30 text-[#00ff88] text-sm font-medium hover:bg-[#00ff88]/20 transition-all">
+                Hesap Bağla
+              </a>
             </div>
           ) : (
             <table className="w-full">
@@ -435,7 +451,7 @@ export default function Dashboard() {
               </thead>
               <tbody className="divide-y divide-white/3">
                 {campaigns.map((c) => (
-                  <tr key={c.id} className="hover:bg-white/2 transition-colors">
+                  <tr key={c.id} className="hover:bg-white/[0.03] transition-colors cursor-pointer">
                     <td className="px-4 py-3">
                       <span className="text-white text-sm truncate max-w-xs block">{c.name}</span>
                       <span className="text-[#444] text-xs font-mono">{c.account_name}</span>
