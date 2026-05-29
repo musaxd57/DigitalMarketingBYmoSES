@@ -165,4 +165,9 @@ export const trendsAPI = {
   generate: (data) => api.post('/trends/generate', data),
 };
 
+// ─── Reports API ─────────────────────────────────────────────────────────────
+export const reportsAPI = {
+  send: (data) => api.post('/reports/send', data),
+};
+
 export default api;

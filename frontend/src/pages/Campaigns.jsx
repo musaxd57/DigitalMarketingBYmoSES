@@ -9,6 +9,27 @@ const OBJECTIVES = {
   tiktok: ['VIDEO_VIEWS', 'TRAFFIC', 'CONVERSIONS', 'APP_INSTALLS', 'LEAD_GENERATION'],
 };
 
+function getCampaignAlerts(c) {
+  const alerts = [];
+  const roas = parseFloat(c.roas || 0);
+  const ctr = parseFloat(c.ctr || 0);
+  const cpa = parseFloat(c.cpa || 0);
+  const spend = parseFloat(c.spend || 0);
+  const budget = parseFloat(c.budget_amount || 0);
+  const impressions = parseInt(c.impressions || 0);
+  if (c.status === 'active' && impressions > 500 && ctr < 0.005)
+    alerts.push({ label: 'Düşük CTR', color: '#ffd700' });
+  if (c.status === 'active' && roas > 0 && roas < 1)
+    alerts.push({ label: 'ROAS < 1', color: '#ff4444' });
+  if (c.status === 'active' && budget > 0 && spend > budget * 1.05)
+    alerts.push({ label: 'Bütçe Aşımı', color: '#ff4444' });
+  if (c.status === 'active' && cpa > 75 && parseInt(c.conversions || 0) > 0)
+    alerts.push({ label: 'Yüksek CPA', color: '#ff8c00' });
+  if (c.status === 'paused' && roas >= 3 && spend > 0)
+    alerts.push({ label: 'Aktif et?', color: '#00ff88' });
+  return alerts;
+}
+
 function StatusBadge({ status }) {
   const styles = {
     active: 'bg-[#00ff88]/10 text-[#00ff88] border-[#00ff88]/20',
@@ -363,7 +384,15 @@ export default function Campaigns() {
                   <tr key={c.id} className="hover:bg-white/2 transition-colors">
                     <td className="px-4 py-3 min-w-[200px]">
                       <div className="text-white text-sm font-medium truncate max-w-[250px]">{c.name}</div>
-                      <div className="text-[#444] text-xs font-mono mt-0.5">{c.account_name || c.external_id}</div>
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        <span className="text-[#444] text-xs font-mono">{c.account_name || c.external_id}</span>
+                        {getCampaignAlerts(c).map((a, i) => (
+                          <span key={i} className="text-xs font-mono px-1.5 py-0.5 rounded"
+                            style={{ color: a.color, backgroundColor: `${a.color}18`, border: `1px solid ${a.color}30` }}>
+                            {a.label}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs font-mono font-semibold"

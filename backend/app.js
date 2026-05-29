@@ -101,6 +101,7 @@ app.use('/api/campaigns', require('./src/routes/campaigns'));
 app.use('/api/analytics', require('./src/routes/analytics'));
 app.use('/api/creative', require('./src/routes/creative'));
 app.use('/api/ai', require('./src/routes/ai'));
+app.use('/api/reports', require('./src/routes/reports'));
 
 // ─── Trend Engine Routes (inline) ────────────────────────────────────────────
 const trendRouter = express.Router();

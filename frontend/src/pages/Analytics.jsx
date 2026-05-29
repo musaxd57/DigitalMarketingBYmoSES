@@ -3,7 +3,7 @@ import {
   LineChart, Line, AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { analyticsAPI } from '../services/api';
+import { analyticsAPI, reportsAPI } from '../services/api';
 import KPICard from '../components/KPICard';
 import { format, subDays } from 'date-fns';
 
@@ -41,6 +41,44 @@ export default function Analytics() {
   const [dateRange, setDateRange] = useState('30d');
   const [selectedMetrics, setSelectedMetrics] = useState(['spend', 'roas', 'ctr']);
   const [chartType, setChartType] = useState('area');
+  const [sendingReport, setSendingReport] = useState(false);
+
+  const downloadCSV = () => {
+    if (!timeseries.length) return;
+    const headers = ['Tarih', 'Harcama', 'Gelir', 'ROAS', 'CTR%', 'CPC', 'CPA', 'Tiklama', 'Gösterim', 'Dönüşüm'];
+    const rows = timeseries.map(r => [
+      r.date,
+      parseFloat(r.spend || 0).toFixed(2),
+      parseFloat(r.revenue || 0).toFixed(2),
+      parseFloat(r.roas || 0).toFixed(2),
+      (parseFloat(r.ctr || 0) * 100).toFixed(2),
+      parseFloat(r.cpc || 0).toFixed(2),
+      parseFloat(r.cpa || 0).toFixed(2),
+      parseInt(r.clicks || 0),
+      parseInt(r.impressions || 0),
+      parseInt(r.conversions || 0),
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `analytics-${dateRange}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSendReport = async () => {
+    setSendingReport(true);
+    try {
+      await reportsAPI.send({});
+      alert('Rapor email adresinize gönderildi!');
+    } catch (err) {
+      alert('Hata: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setSendingReport(false);
+    }
+  };
 
   const getDateRange = (range) => {
     const end = format(new Date(), 'yyyy-MM-dd');
@@ -98,6 +136,20 @@ export default function Analytics() {
               {r}
             </button>
           ))}
+          <button
+            onClick={downloadCSV}
+            disabled={!timeseries.length}
+            className="px-3 py-1.5 rounded text-xs font-mono border border-white/10 text-[#888] hover:text-white hover:border-white/20 transition-all disabled:opacity-30"
+          >
+            ↓ CSV
+          </button>
+          <button
+            onClick={handleSendReport}
+            disabled={sendingReport}
+            className="px-3 py-1.5 rounded text-xs font-mono border border-[#9d4edd]/30 text-[#9d4edd] hover:bg-[#9d4edd]/10 transition-all disabled:opacity-50"
+          >
+            {sendingReport ? '...' : '✉ Rapor Gönder'}
+          </button>
         </div>
       </div>
 
