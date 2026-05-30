@@ -120,6 +120,7 @@ export const campaignsAPI = {
   create: (data) => api.post('/campaigns', data),
   update: (id, data) => api.put(`/campaigns/${id}`, data),
   sync: (data) => api.post('/campaigns/sync', data),
+  publishMeta: (data) => api.post('/campaigns/publish-meta', data),
 };
 
 // ─── Analytics API ────────────────────────────────────────────────────────────

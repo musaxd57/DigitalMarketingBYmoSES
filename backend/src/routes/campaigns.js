@@ -294,4 +294,90 @@ router.post('/sync', authenticate, syncLimiter, async (req, res) => {
   }
 });
 
+// POST /api/campaigns/publish-meta - create real campaign on Meta Ads
+router.post('/publish-meta', authenticate, async (req, res) => {
+  const { adAccountId, name, objective, dailyBudget, targeting, startDate } = req.body;
+
+  if (!adAccountId || !name || !objective || !dailyBudget) {
+    return res.status(400).json({ error: 'adAccountId, name, objective, dailyBudget are required' });
+  }
+
+  try {
+    const accountResult = await pool.query(
+      `SELECT * FROM ad_accounts WHERE id = $1 AND tenant_id = $2 AND platform = 'meta' AND is_active = true`,
+      [adAccountId, req.user.tenantId]
+    );
+    if (accountResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Meta ad account not found' });
+    }
+
+    const MetaAdsService = require('../services/metaAds');
+    const metaService = new MetaAdsService(accountResult.rows[0]);
+
+    // Map our objective to Meta API objective
+    const objectiveMap = {
+      TRAFFIC: 'OUTCOME_TRAFFIC',
+      CONVERSIONS: 'OUTCOME_SALES',
+      BRAND_AWARENESS: 'OUTCOME_AWARENESS',
+      ENGAGEMENT: 'OUTCOME_ENGAGEMENT',
+      LEAD_GENERATION: 'OUTCOME_LEADS',
+      VIDEO_VIEWS: 'OUTCOME_AWARENESS',
+    };
+    const metaObjective = objectiveMap[objective] || 'OUTCOME_TRAFFIC';
+
+    // Create campaign on Meta
+    const metaCampaign = await metaService.createCampaign({
+      name,
+      objective: metaObjective,
+      status: 'PAUSED',
+    });
+
+    // Default targeting if not provided
+    const targetingData = targeting || {
+      geo_locations: { countries: ['TR'] },
+      age_min: 18,
+      age_max: 65,
+    };
+
+    // Create ad set on Meta
+    const metaAdSet = await metaService.createAdSet({
+      campaignId: metaCampaign.id,
+      name: `${name} - Reklam Seti`,
+      dailyBudget: parseFloat(dailyBudget),
+      targeting: targetingData,
+      startTime: startDate ? new Date(startDate).toISOString() : undefined,
+    });
+
+    // Save to local DB
+    const dbResult = await pool.query(
+      `INSERT INTO campaigns
+         (tenant_id, ad_account_id, external_id, name, platform, status, objective,
+          budget_type, budget_amount, start_date)
+       VALUES ($1, $2, $3, $4, 'meta', 'paused', $5, 'daily', $6, $7)
+       RETURNING *`,
+      [
+        req.user.tenantId,
+        adAccountId,
+        metaCampaign.id,
+        name,
+        objective,
+        parseFloat(dailyBudget),
+        startDate || new Date().toISOString().split('T')[0],
+      ]
+    );
+
+    return res.status(201).json({
+      campaign: dbResult.rows[0],
+      meta: {
+        campaignId: metaCampaign.id,
+        adSetId: metaAdSet.id,
+      },
+      message: 'Kampanya Meta Ads\'te oluşturuldu (duraklatılmış)',
+    });
+  } catch (err) {
+    console.error('[Campaigns] Meta publish error:', err.message);
+    return res.status(500).json({ error: err.message || 'Failed to publish campaign to Meta' });
+  }
+});
+
 module.exports = router;
