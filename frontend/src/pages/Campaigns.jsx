@@ -229,7 +229,17 @@ export default function Campaigns() {
   const [total, setTotal] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [adAccounts, setAdAccounts] = useState([]);
+  const [activeTab, setActiveTab] = useState('campaigns');
   const LIMIT = 25;
+
+  // Optimization state
+  const [optimizing, setOptimizing] = useState(false);
+  const [optResult, setOptResult] = useState(null);
+  const [applyingId, setApplyingId] = useState(null);
+  const [appliedIds, setAppliedIds] = useState({});
+  const [reportEmail, setReportEmail] = useState('');
+  const [sendingReport, setSendingReport] = useState(false);
+  const [reportSent, setReportSent] = useState(false);
 
   useEffect(() => {
     accountsAPI.list().then((res) => setAdAccounts(res.data.accounts || [])).catch(() => {});
@@ -271,13 +281,66 @@ export default function Campaigns() {
 
   const totalPages = Math.ceil(total / LIMIT);
 
+  const handleOptimize = async () => {
+    setOptimizing(true);
+    setOptResult(null);
+    try {
+      const res = await campaignsAPI.optimize({ days: 14 });
+      setOptResult(res.data);
+    } catch (err) {
+      alert(err.response?.data?.error || err.message);
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
+  const handleApply = async (rec) => {
+    setApplyingId(rec.campaignId);
+    try {
+      const res = await campaignsAPI.applyOptimization({
+        campaignId: rec.campaignId,
+        action: rec.action,
+        newBudget: rec.newBudget,
+        adAccountId: rec.adAccountId,
+        externalId: rec.externalId,
+      });
+      setAppliedIds((prev) => ({ ...prev, [rec.campaignId]: res.data.message }));
+      fetchCampaigns();
+    } catch (err) {
+      setAppliedIds((prev) => ({ ...prev, [rec.campaignId]: `Hata: ${err.response?.data?.error || err.message}` }));
+    } finally {
+      setApplyingId(null);
+    }
+  };
+
+  const handleSendReport = async () => {
+    setSendingReport(true);
+    setReportSent(false);
+    try {
+      await campaignsAPI.weeklyReport({ email: reportEmail });
+      setReportSent(true);
+    } catch (err) {
+      alert(err.response?.data?.error || err.message);
+    } finally {
+      setSendingReport(false);
+    }
+  };
+
+  const ACTION_LABEL = {
+    increase_budget: { label: 'Bütçe Artır', color: '#00ff88' },
+    decrease_budget: { label: 'Bütçe Düşür', color: '#facc15' },
+    pause: { label: 'Durdur', color: '#f87171' },
+    refresh_creative: { label: 'Kreatif Yenile', color: '#a78bfa' },
+    keep: { label: 'Koru', color: '#475569' },
+  };
+
   return (
     <div className="p-6 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-white text-xl font-semibold">Campaigns</h1>
-          <p className="text-[#555] text-sm">{total} campaigns across all platforms</p>
+          <h1 className="text-white text-xl font-semibold">Kampanyalar</h1>
+          <p className="text-[#555] text-sm">{total} kampanya · tüm platformlar</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -306,8 +369,136 @@ export default function Campaigns() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-3">
+      {/* Tabs */}
+      <div className="flex gap-1 bg-[#0d0d14] rounded-xl p-1 border border-white/5 w-fit">
+        {[['campaigns', 'Kampanyalar'], ['optimize', '⚡ Optimizasyon']].map(([key, label]) => (
+          <button key={key} onClick={() => setActiveTab(key)}
+            className={`py-2 px-4 rounded-lg text-sm font-medium transition-all
+              ${activeTab === key ? 'bg-[#00ff88]/10 text-[#00ff88] border border-[#00ff88]/20' : 'text-[#555] hover:text-[#888]'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Optimization Tab */}
+      {activeTab === 'optimize' && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleOptimize}
+              disabled={optimizing}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/30 text-[#00ff88] text-sm font-medium hover:bg-[#00ff88]/20 transition-all disabled:opacity-50"
+            >
+              {optimizing ? <div className="w-4 h-4 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin" /> : '⚡'}
+              {optimizing ? 'Analiz ediliyor...' : 'AI ile Analiz Et (Son 14 Gün)'}
+            </button>
+            {optResult && (
+              <span className="text-[#555] text-xs font-mono">{optResult.campaignCount} kampanya · {optResult.analyzedDays} gün</span>
+            )}
+          </div>
+
+          {optResult && (
+            <>
+              {optResult.summary && (
+                <div className="bg-[#111118] border border-[#00ff88]/10 rounded-xl p-4">
+                  <p className="text-[#555] text-xs font-mono uppercase tracking-wider mb-2">AI Özeti</p>
+                  <p className="text-[#94a3b8] text-sm leading-relaxed">{optResult.summary}</p>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {optResult.recommendations.map((rec) => {
+                  const act = ACTION_LABEL[rec.action] || ACTION_LABEL.keep;
+                  const applied = appliedIds[rec.campaignId];
+                  return (
+                    <div key={rec.campaignId}
+                      className={`bg-[#111118] rounded-xl border p-4 ${rec.priority === 'high' ? 'border-red-500/20' : rec.priority === 'medium' ? 'border-yellow-500/20' : 'border-white/5'}`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="text-white text-sm font-medium truncate">{rec.campaignName}</span>
+                            <span className="text-xs px-1.5 py-0.5 rounded font-mono capitalize"
+                              style={{ background: `${PLATFORM_COLORS[rec.platform]}22`, color: PLATFORM_COLORS[rec.platform] }}>
+                              {rec.platform}
+                            </span>
+                            <span className="text-xs px-1.5 py-0.5 rounded font-mono"
+                              style={{ background: `${act.color}18`, color: act.color }}>
+                              {act.label}
+                            </span>
+                            {rec.priority === 'high' && (
+                              <span className="text-xs px-1.5 py-0.5 rounded font-mono bg-red-500/10 text-red-400">KRİTİK</span>
+                            )}
+                          </div>
+                          <p className="text-[#666] text-xs mb-2">{rec.reason}</p>
+                          <div className="flex items-center gap-4 text-xs font-mono">
+                            <span className="text-[#555]">Harcama: <span className="text-[#888]">{rec.metrics.spend} TRY</span></span>
+                            <span className="text-[#555]">ROAS: <span style={{ color: rec.metrics.roas >= 2 ? '#00ff88' : rec.metrics.roas >= 1 ? '#facc15' : '#f87171' }}>{rec.metrics.roas}x</span></span>
+                            <span className="text-[#555]">CTR: <span className="text-[#888]">{rec.metrics.ctr}%</span></span>
+                            {rec.currentBudget > 0 && (
+                              <span className="text-[#555]">Bütçe: <span className="text-[#888]">{rec.currentBudget} TRY</span>
+                                {rec.newBudget && <span style={{ color: act.color }}> → {rec.newBudget} TRY</span>}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex-shrink-0">
+                          {applied ? (
+                            <span className="text-xs text-[#00ff88] bg-[#00ff88]/10 px-3 py-1.5 rounded-lg">{applied}</span>
+                          ) : rec.action !== 'keep' && rec.action !== 'refresh_creative' ? (
+                            <button
+                              onClick={() => handleApply(rec)}
+                              disabled={applyingId === rec.campaignId}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all disabled:opacity-50"
+                              style={{ background: `${act.color}18`, color: act.color, borderColor: `${act.color}40` }}
+                            >
+                              {applyingId === rec.campaignId ? <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" /> : null}
+                              Uygula
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Weekly report section */}
+              <div className="bg-[#111118] border border-white/5 rounded-xl p-4 mt-2">
+                <p className="text-white text-sm font-medium mb-3">Haftalık Rapor Gönder</p>
+                <div className="flex gap-3 items-center">
+                  <input
+                    type="email"
+                    placeholder="E-posta adresi"
+                    value={reportEmail}
+                    onChange={(e) => setReportEmail(e.target.value)}
+                    className="flex-1 bg-[#0d0d14] border border-white/10 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#00ff88]/40"
+                  />
+                  <button
+                    onClick={handleSendReport}
+                    disabled={sendingReport || !reportEmail}
+                    className="px-4 py-2 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/30 text-[#00ff88] text-sm hover:bg-[#00ff88]/20 transition-all disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {sendingReport ? 'Gönderiliyor...' : '📧 Rapor Gönder'}
+                  </button>
+                </div>
+                {reportSent && <p className="text-[#00ff88] text-xs mt-2">✓ Rapor gönderildi!</p>}
+                <p className="text-[#333] text-xs mt-1.5">SMTP yapılandırılmamışsa rapor indirme olarak döner.</p>
+              </div>
+            </>
+          )}
+
+          {!optResult && !optimizing && (
+            <div className="bg-[#111118] border border-white/5 rounded-xl p-12 flex flex-col items-center gap-3">
+              <span className="text-4xl">⚡</span>
+              <p className="text-[#444] text-sm">Kampanyalarını analiz et, AI önerileri al</p>
+              <p className="text-[#333] text-xs">Son 14 günün ROAS, CTR ve dönüşüm verilerine göre bütçe optimizasyonu</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Filters — only shown on campaigns tab */}
+      {activeTab === 'campaigns' && <div className="flex items-center gap-3">
         <select
           value={filter.platform}
           onChange={(e) => { setFilter((f) => ({ ...f, platform: e.target.value })); setPage(1); }}
@@ -329,9 +520,10 @@ export default function Campaigns() {
           <option value="draft">Draft</option>
           <option value="archived">Archived</option>
         </select>
-      </div>
+      </div>}
 
-      {/* Table */}
+      {activeTab === 'campaigns' && (
+      <>{/* Table */}
       <div className="bg-[#111118] rounded-xl border border-white/5 overflow-hidden">
         <div className="overflow-x-auto">
           {loading ? (
@@ -426,6 +618,7 @@ export default function Campaigns() {
           </div>
         )}
       </div>
+      </>)}
 
       {showCreateModal && (
         <CreateCampaignModal

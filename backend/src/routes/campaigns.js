@@ -1,4 +1,5 @@
 const express = require('express');
+const axios = require('axios');
 const router = express.Router();
 const { pool } = require('../models/db');
 const { authenticate } = require('../middleware/auth');
@@ -6,6 +7,7 @@ const { syncLimiter } = require('../middleware/rateLimiter');
 const MetaAdsService = require('../services/metaAds');
 const GoogleAdsService = require('../services/googleAds');
 const TikTokAdsService = require('../services/tiktokAds');
+const config = require('../config');
 
 // GET /api/campaigns - list all campaigns with latest metrics
 router.get('/', authenticate, async (req, res) => {
@@ -465,6 +467,350 @@ router.post('/publish-meta', authenticate, async (req, res) => {
   } catch (err) {
     console.error('[Campaigns] Meta publish error:', err.message);
     return res.status(500).json({ error: err.message || 'Failed to publish campaign to Meta' });
+  }
+});
+
+// POST /api/campaigns/optimize — analyze campaigns, return AI recommendations
+router.post('/optimize', authenticate, async (req, res) => {
+  const { days = 14 } = req.body;
+  try {
+    // Fetch campaigns with aggregated analytics
+    const result = await pool.query(
+      `SELECT
+         c.id, c.external_id, c.name, c.platform, c.status,
+         c.budget_amount, c.budget_type,
+         aa.id AS ad_account_id, aa.account_name,
+         COALESCE(SUM(s.spend), 0) AS total_spend,
+         COALESCE(SUM(s.impressions), 0) AS total_impressions,
+         COALESCE(SUM(s.clicks), 0) AS total_clicks,
+         COALESCE(SUM(s.conversions), 0) AS total_conversions,
+         COALESCE(SUM(s.conversion_value), 0) AS total_conversion_value,
+         CASE WHEN SUM(s.spend) > 0 THEN SUM(s.conversion_value) / SUM(s.spend) ELSE 0 END AS roas,
+         CASE WHEN SUM(s.impressions) > 0 THEN SUM(s.clicks)::decimal / SUM(s.impressions) ELSE 0 END AS ctr,
+         CASE WHEN SUM(s.conversions) > 0 THEN SUM(s.spend) / SUM(s.conversions) ELSE 0 END AS cpa
+       FROM campaigns c
+       JOIN ad_accounts aa ON c.ad_account_id = aa.id
+       LEFT JOIN analytics_snapshots s ON s.campaign_id = c.id
+         AND s.snapshot_date >= NOW() - ($2 || ' days')::INTERVAL
+       WHERE c.tenant_id = $1 AND c.status NOT IN ('deleted','archived')
+       GROUP BY c.id, c.external_id, c.name, c.platform, c.status,
+                c.budget_amount, c.budget_type, aa.id, aa.account_name
+       HAVING COALESCE(SUM(s.spend), 0) > 0
+       ORDER BY roas DESC`,
+      [req.user.tenantId, days]
+    );
+
+    const campaigns = result.rows;
+
+    if (campaigns.length === 0) {
+      return res.json({
+        recommendations: [],
+        summary: 'Yeterli veri yok. Kampanya harcaması başladıktan sonra tekrar kontrol et.',
+      });
+    }
+
+    // Rule-based scoring (works without GPT)
+    const avgRoas = campaigns.reduce((s, c) => s + parseFloat(c.roas), 0) / campaigns.length;
+    const avgCtr = campaigns.reduce((s, c) => s + parseFloat(c.ctr), 0) / campaigns.length;
+
+    const recommendations = campaigns.map((c) => {
+      const roas = parseFloat(c.roas);
+      const ctr = parseFloat(c.ctr);
+      const budget = parseFloat(c.budget_amount) || 0;
+      const spend = parseFloat(c.total_spend);
+
+      let action = 'keep';
+      let newBudget = null;
+      let reason = '';
+      let priority = 'low';
+
+      if (roas >= avgRoas * 1.5 && ctr >= avgCtr) {
+        // Top performer — increase budget
+        newBudget = Math.round(budget * 1.3);
+        action = 'increase_budget';
+        reason = `ROAS ${roas.toFixed(2)}x ortalamanın %50 üzerinde. Bütçeyi %30 artır.`;
+        priority = 'high';
+      } else if (roas < 0.8 && spend > 50) {
+        // Losing money — pause
+        action = 'pause';
+        reason = `ROAS ${roas.toFixed(2)}x — harcama karşılıksız. Durdur veya optimize et.`;
+        priority = 'high';
+      } else if (roas < avgRoas * 0.7 && budget > 100) {
+        // Underperformer — cut budget
+        newBudget = Math.round(budget * 0.6);
+        action = 'decrease_budget';
+        reason = `ROAS ortalamanın %30 altında. Bütçeyi %40 düşür.`;
+        priority = 'medium';
+      } else if (roas >= avgRoas && ctr < avgCtr * 0.5) {
+        // Good ROAS but low CTR — creative issue
+        action = 'refresh_creative';
+        reason = `CTR düşük (${(ctr * 100).toFixed(2)}%). Yeni kreatif dene.`;
+        priority = 'medium';
+      } else {
+        action = 'keep';
+        reason = `Performans ortalama seviyede. Mevcut bütçeyi koru.`;
+        priority = 'low';
+      }
+
+      return {
+        campaignId: c.id,
+        externalId: c.external_id,
+        campaignName: c.name,
+        platform: c.platform,
+        adAccountId: c.ad_account_id,
+        currentBudget: budget,
+        newBudget,
+        action,
+        reason,
+        priority,
+        metrics: {
+          spend: parseFloat(spend.toFixed(2)),
+          roas: parseFloat(roas.toFixed(3)),
+          ctr: parseFloat((ctr * 100).toFixed(3)),
+          conversions: parseInt(c.total_conversions),
+          clicks: parseInt(c.total_clicks),
+        },
+      };
+    });
+
+    // Sort: high priority first
+    recommendations.sort((a, b) => {
+      const p = { high: 0, medium: 1, low: 2 };
+      return p[a.priority] - p[b.priority];
+    });
+
+    // GPT summary if available
+    let aiSummary = null;
+    if (config.openai.apiKey) {
+      try {
+        const topRecs = recommendations.slice(0, 5);
+        const prompt = `Dijital reklam kampanyası optimizasyon uzmanısın. Aşağıdaki ${days} günlük kampanya verileri için kısa bir Türkçe özet yaz (3-4 cümle). Hangi kampanyalara öncelik ver, genel bütçe stratejisi ne olmalı:\n\n${topRecs.map(r => `- ${r.campaignName}: ROAS ${r.metrics.roas}x, CTR ${r.metrics.ctr}%, Harcama ${r.metrics.spend} TRY → Öneri: ${r.reason}`).join('\n')}`;
+        const gptRes = await axios.post(
+          'https://api.openai.com/v1/chat/completions',
+          {
+            model: config.openai.model,
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 300,
+            temperature: 0.7,
+          },
+          { headers: { Authorization: `Bearer ${config.openai.apiKey}` }, timeout: 20000 }
+        );
+        aiSummary = gptRes.data.choices[0].message.content;
+      } catch { /* optional */ }
+    }
+
+    return res.json({
+      recommendations,
+      summary: aiSummary || `${recommendations.filter(r => r.priority === 'high').length} kritik, ${recommendations.filter(r => r.priority === 'medium').length} orta öncelikli öneri. Toplam ${campaigns.length} kampanya analiz edildi.`,
+      analyzedDays: days,
+      campaignCount: campaigns.length,
+    });
+  } catch (err) {
+    console.error('[Campaigns] Optimize error:', err.message);
+    return res.status(500).json({ error: err.message || 'Optimization failed' });
+  }
+});
+
+// POST /api/campaigns/apply-optimization — apply a single recommendation
+router.post('/apply-optimization', authenticate, async (req, res) => {
+  const { campaignId, action, newBudget, adAccountId, externalId } = req.body;
+
+  if (!campaignId || !action) {
+    return res.status(400).json({ error: 'campaignId and action are required' });
+  }
+
+  try {
+    // Get campaign + account details
+    const campResult = await pool.query(
+      `SELECT c.*, aa.platform, aa.encrypted_access_token, aa.account_id AS meta_account_id,
+              aa.encrypted_refresh_token, aa.token_expires_at, aa.metadata
+       FROM campaigns c
+       JOIN ad_accounts aa ON c.ad_account_id = aa.id
+       WHERE c.id = $1 AND c.tenant_id = $2`,
+      [campaignId, req.user.tenantId]
+    );
+
+    if (campResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    const campaign = campResult.rows[0];
+    let applied = false;
+    let message = '';
+
+    if (campaign.platform === 'meta' && campaign.encrypted_access_token) {
+      const metaService = new MetaAdsService(campaign);
+
+      // For budget changes we need the ad set ID — fetch it from Meta
+      if (action === 'increase_budget' || action === 'decrease_budget') {
+        if (!newBudget) return res.status(400).json({ error: 'newBudget required for budget changes' });
+
+        // Get ad sets for this campaign
+        const adSets = await metaService.request(`/${externalId}/adsets`, { fields: 'id,name,daily_budget', limit: 10 });
+        if (adSets.data?.length > 0) {
+          for (const adSet of adSets.data) {
+            await metaService.updateAdSetBudget(adSet.id, newBudget);
+          }
+          applied = true;
+          message = `Bütçe ${newBudget} TRY olarak güncellendi (${adSets.data.length} reklam seti)`;
+        } else {
+          message = 'Reklam seti bulunamadı — Meta Ads Manager\'dan manuel güncelle';
+        }
+      } else if (action === 'pause') {
+        const adSets = await metaService.request(`/${externalId}/adsets`, { fields: 'id,name', limit: 10 });
+        if (adSets.data?.length > 0) {
+          for (const adSet of adSets.data) {
+            await metaService.setAdSetStatus(adSet.id, 'PAUSED');
+          }
+          applied = true;
+          message = `Kampanya duraklatıldı (${adSets.data.length} reklam seti)`;
+        }
+      }
+    } else {
+      message = `${campaign.platform} platformu için manuel uygula — API desteği aktif değil`;
+    }
+
+    // Update local DB budget
+    if (applied && newBudget) {
+      await pool.query(
+        'UPDATE campaigns SET budget_amount = $1, updated_at = NOW() WHERE id = $2',
+        [newBudget, campaignId]
+      );
+    }
+    if (applied && action === 'pause') {
+      await pool.query(
+        "UPDATE campaigns SET status = 'paused', updated_at = NOW() WHERE id = $1",
+        [campaignId]
+      );
+    }
+
+    // Log the action
+    await pool.query(
+      `INSERT INTO ai_generations (tenant_id, user_id, type, status, input_data, model_used, output_data, tokens_used, job_completed_at)
+       VALUES ($1, $2, 'optimization', 'completed', $3, 'rule-based', $4, 0, NOW())`,
+      [
+        req.user.tenantId,
+        req.user.id,
+        JSON.stringify({ campaignId, action, newBudget }),
+        JSON.stringify({ applied, message }),
+      ]
+    ).catch(() => {});
+
+    return res.json({ applied, message, action });
+  } catch (err) {
+    console.error('[Campaigns] Apply optimization error:', err.message);
+    return res.status(500).json({ error: err.message || 'Failed to apply optimization' });
+  }
+});
+
+// POST /api/campaigns/weekly-report — generate + optionally email weekly performance report
+router.post('/weekly-report', authenticate, async (req, res) => {
+  const { email } = req.body;
+  try {
+    const result = await pool.query(
+      `SELECT
+         c.name, c.platform, c.status,
+         COALESCE(SUM(s.spend), 0) AS spend,
+         COALESCE(SUM(s.impressions), 0) AS impressions,
+         COALESCE(SUM(s.clicks), 0) AS clicks,
+         COALESCE(SUM(s.conversions), 0) AS conversions,
+         CASE WHEN SUM(s.spend) > 0 THEN SUM(s.conversion_value) / SUM(s.spend) ELSE 0 END AS roas,
+         CASE WHEN SUM(s.impressions) > 0 THEN SUM(s.clicks)::decimal / SUM(s.impressions) * 100 ELSE 0 END AS ctr_pct
+       FROM campaigns c
+       LEFT JOIN analytics_snapshots s ON s.campaign_id = c.id
+         AND s.snapshot_date >= NOW() - INTERVAL '7 days'
+       WHERE c.tenant_id = $1 AND c.status NOT IN ('deleted','archived')
+       GROUP BY c.id, c.name, c.platform, c.status
+       ORDER BY spend DESC
+       LIMIT 20`,
+      [req.user.tenantId]
+    );
+
+    const rows = result.rows;
+    const totalSpend = rows.reduce((s, r) => s + parseFloat(r.spend), 0);
+    const totalConversions = rows.reduce((s, r) => s + parseInt(r.conversions), 0);
+    const avgRoas = rows.length ? rows.reduce((s, r) => s + parseFloat(r.roas), 0) / rows.filter(r => parseFloat(r.spend) > 0).length : 0;
+
+    const reportData = {
+      period: 'Son 7 Gün',
+      generatedAt: new Date().toISOString(),
+      summary: { totalSpend: totalSpend.toFixed(2), totalConversions, avgRoas: avgRoas.toFixed(2), campaignCount: rows.length },
+      campaigns: rows.map(r => ({
+        name: r.name, platform: r.platform, status: r.status,
+        spend: parseFloat(r.spend).toFixed(2),
+        roas: parseFloat(r.roas).toFixed(2),
+        ctr: parseFloat(r.ctr_pct).toFixed(2),
+        conversions: parseInt(r.conversions),
+      })),
+    };
+
+    // Send email if SMTP configured and email provided
+    let emailSent = false;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    if (email && smtpUser && smtpPass) {
+      try {
+        const nodemailer = require('nodemailer');
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST || 'smtp.gmail.com',
+          port: parseInt(process.env.SMTP_PORT || '587'),
+          secure: false,
+          auth: { user: smtpUser, pass: smtpPass },
+        });
+
+        const topCampaigns = reportData.campaigns.slice(0, 5)
+          .map(c => `<tr><td style="padding:8px;border-bottom:1px solid #222">${c.name}</td><td style="padding:8px;border-bottom:1px solid #222;text-align:center">${c.platform}</td><td style="padding:8px;border-bottom:1px solid #222;text-align:center">${c.spend} TRY</td><td style="padding:8px;border-bottom:1px solid #222;text-align:center;color:${parseFloat(c.roas) >= 2 ? '#00ff88' : parseFloat(c.roas) >= 1 ? '#facc15' : '#f87171'}">${c.roas}x</td><td style="padding:8px;border-bottom:1px solid #222;text-align:center">${c.ctr}%</td></tr>`)
+          .join('');
+
+        await transporter.sendMail({
+          from: `Digital Marketing by Moses <${smtpUser}>`,
+          to: email,
+          subject: `📊 Haftalık Reklam Raporu — ${new Date().toLocaleDateString('tr-TR')}`,
+          html: `
+<div style="background:#0a0e1f;color:#f1f5f9;font-family:Inter,sans-serif;padding:32px;max-width:600px;margin:0 auto;border-radius:12px">
+  <h1 style="color:#00ff88;font-size:20px;margin:0 0 4px">Digital Marketing by Moses</h1>
+  <p style="color:#475569;font-size:13px;margin:0 0 24px">Haftalık Performans Raporu — Son 7 Gün</p>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:16px;text-align:center">
+      <p style="color:#475569;font-size:11px;font-family:monospace;margin:0 0 4px">TOPLAM HARCAMA</p>
+      <p style="color:#f1f5f9;font-size:22px;font-weight:600;margin:0">${reportData.summary.totalSpend} TRY</p>
+    </div>
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:16px;text-align:center">
+      <p style="color:#475569;font-size:11px;font-family:monospace;margin:0 0 4px">ORT. ROAS</p>
+      <p style="color:#00ff88;font-size:22px;font-weight:600;margin:0">${reportData.summary.avgRoas}x</p>
+    </div>
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:16px;text-align:center">
+      <p style="color:#475569;font-size:11px;font-family:monospace;margin:0 0 4px">DÖNÜŞÜMLER</p>
+      <p style="color:#f1f5f9;font-size:22px;font-weight:600;margin:0">${reportData.summary.totalConversions}</p>
+    </div>
+  </div>
+
+  <h2 style="color:#94a3b8;font-size:13px;font-family:monospace;text-transform:uppercase;letter-spacing:.05em;margin:0 0 12px">Kampanyalar</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="color:#475569">
+      <th style="padding:8px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06)">Kampanya</th>
+      <th style="padding:8px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.06)">Platform</th>
+      <th style="padding:8px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.06)">Harcama</th>
+      <th style="padding:8px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.06)">ROAS</th>
+      <th style="padding:8px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.06)">CTR</th>
+    </tr></thead>
+    <tbody>${topCampaigns}</tbody>
+  </table>
+
+  <p style="color:#1e293b;font-size:11px;margin:24px 0 0;text-align:center">Digital Marketing by Moses — Otomatik Rapor</p>
+</div>`,
+        });
+        emailSent = true;
+      } catch (emailErr) {
+        console.error('[Campaigns] Report email error:', emailErr.message);
+      }
+    }
+
+    return res.json({ report: reportData, emailSent });
+  } catch (err) {
+    console.error('[Campaigns] Weekly report error:', err.message);
+    return res.status(500).json({ error: err.message || 'Report generation failed' });
   }
 });
 

@@ -290,6 +290,41 @@ class MetaAdsService {
   }
 
   /**
+   * Update daily budget of an ad set
+   */
+  async updateAdSetBudget(adSetId, newDailyBudgetTRY) {
+    try {
+      const res = await axios.post(
+        `${this.baseUrl}/${adSetId}`,
+        {
+          daily_budget: Math.round(newDailyBudgetTRY * 100),
+          access_token: this.accessToken,
+        }
+      );
+      return res.data;
+    } catch (err) {
+      const errData = err.response?.data?.error;
+      throw new Error(`Meta Budget Update: ${errData?.message || err.message}`);
+    }
+  }
+
+  /**
+   * Pause or resume an ad set
+   */
+  async setAdSetStatus(adSetId, status) {
+    try {
+      const res = await axios.post(
+        `${this.baseUrl}/${adSetId}`,
+        { status, access_token: this.accessToken }
+      );
+      return res.data;
+    } catch (err) {
+      const errData = err.response?.data?.error;
+      throw new Error(`Meta Status Update: ${errData?.message || err.message}`);
+    }
+  }
+
+  /**
    * Get Facebook pages connected to this ad account's business
    */
   async getConnectedPages() {
