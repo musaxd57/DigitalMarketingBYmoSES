@@ -3,7 +3,7 @@ import { aiAPI, creativeAPI } from '../services/api';
 import CreativeScoreCard from '../components/CreativeScoreCard';
 import { useSocket } from '../App';
 
-const TABS = ['Ad Copy', 'Video Pipeline', 'Voiceover', 'Score Library'];
+const TABS = ['Ad Copy', 'AI Görsel', 'Video Pipeline', 'Voiceover', 'Score Library'];
 
 export default function Creative() {
   const [activeTab, setActiveTab] = useState(0);
@@ -29,6 +29,14 @@ export default function Creative() {
   const pollRef = useRef(null);
   const copyPollRef = useRef(null);
 
+  // Image generation state
+  const [imageForm, setImageForm] = useState({
+    brandName: '', productDescription: '', style: 'photorealistic', platform: 'meta', size: '1024x1024',
+  });
+  const [generatingImage, setGeneratingImage] = useState(false);
+  const [imageResult, setImageResult] = useState(null);
+  const [imageError, setImageError] = useState('');
+
   // Voiceover state
   const [voiceForm, setVoiceForm] = useState({ text: '', voice: 'nova', model: 'tts-1' });
   const [generatingVoice, setGeneratingVoice] = useState(false);
@@ -41,7 +49,7 @@ export default function Creative() {
   const [scoring, setScoring] = useState(false);
 
   useEffect(() => {
-    if (activeTab === 3) fetchCreatives();
+    if (activeTab === 4) fetchCreatives();
   }, [activeTab]);
 
   useEffect(() => {
@@ -73,6 +81,21 @@ export default function Creative() {
       setCreatives(res.data.creatives || []);
     } finally {
       setLoadingCreatives(false);
+    }
+  };
+
+  const handleGenerateImage = async () => {
+    if (!imageForm.brandName || !imageForm.productDescription) return;
+    setGeneratingImage(true);
+    setImageResult(null);
+    setImageError('');
+    try {
+      const res = await aiAPI.generateImage(imageForm);
+      setImageResult(res.data);
+    } catch (err) {
+      setImageError(err.response?.data?.error || err.message);
+    } finally {
+      setGeneratingImage(false);
     }
   };
 
@@ -388,8 +411,116 @@ export default function Creative() {
         </div>
       )}
 
-      {/* VIDEO PIPELINE TAB */}
+      {/* AI GÖRSEL TAB */}
       {activeTab === 1 && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <div className="bg-[#111118] rounded-xl border border-white/5 p-5 space-y-4">
+            <h2 className="text-white font-semibold text-sm">AI Reklam Görseli Oluştur</h2>
+            <p className="text-[#555] text-xs">DALL-E 3 ile profesyonel reklam görseli üret</p>
+
+            <div>
+              <label className={labelClass}>Marka Adı *</label>
+              <input className={inputClass} placeholder="örn. İlliyyun Ambalaj"
+                value={imageForm.brandName}
+                onChange={(e) => setImageForm((f) => ({ ...f, brandName: e.target.value }))} />
+            </div>
+            <div>
+              <label className={labelClass}>Ürün / Hizmet Açıklaması *</label>
+              <textarea rows={3} className={inputClass}
+                placeholder="Ne reklamını yapıyorsunuz? Ürünü detaylıca açıkla..."
+                value={imageForm.productDescription}
+                onChange={(e) => setImageForm((f) => ({ ...f, productDescription: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>Görsel Stili</label>
+                <select className={inputClass} value={imageForm.style}
+                  onChange={(e) => setImageForm((f) => ({ ...f, style: e.target.value }))}>
+                  <option value="photorealistic">Fotogerçekçi</option>
+                  <option value="lifestyle">Yaşam Tarzı</option>
+                  <option value="minimalist">Minimalist</option>
+                  <option value="vibrant">Canlı / Dinamik</option>
+                  <option value="ugc">UGC (Kullanıcı İçeriği)</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Platform / Boyut</label>
+                <select className={inputClass} value={imageForm.size}
+                  onChange={(e) => setImageForm((f) => ({ ...f, size: e.target.value }))}>
+                  <option value="1024x1024">Kare 1:1 (Meta Feed)</option>
+                  <option value="meta_story">Dikey 9:16 (Story / TikTok)</option>
+                  <option value="google_banner">Yatay 16:9 (Google Banner)</option>
+                </select>
+              </div>
+            </div>
+
+            {imageError && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-red-400 text-sm">{imageError}</div>
+            )}
+
+            <button
+              onClick={handleGenerateImage}
+              disabled={generatingImage || !imageForm.brandName || !imageForm.productDescription}
+              className="w-full py-2.5 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/30 text-[#00ff88] font-medium text-sm hover:bg-[#00ff88]/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {generatingImage ? (
+                <><div className="w-4 h-4 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin" /> Oluşturuluyor (~20sn)...</>
+              ) : '🎨 AI Görsel Oluştur'}
+            </button>
+          </div>
+
+          <div className="bg-[#111118] rounded-xl border border-white/5 p-5 flex flex-col">
+            <h2 className="text-white font-semibold text-sm mb-4">Üretilen Görsel</h2>
+            {generatingImage ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-4 py-12">
+                <div className="w-16 h-16 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin" />
+                <p className="text-[#555] text-sm">DALL-E 3 görsel üretiyor...</p>
+                <p className="text-[#333] text-xs">Bu işlem ~20 saniye sürebilir</p>
+              </div>
+            ) : imageResult ? (
+              <div className="space-y-4">
+                <div className="rounded-xl overflow-hidden border border-white/10">
+                  <img src={imageResult.imageUrl} alt="Generated ad" className="w-full object-cover" />
+                </div>
+                <div className="flex gap-2">
+                  <a
+                    href={imageResult.imageUrl}
+                    download="reklam-gorseli.png"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 text-center py-2 rounded-lg bg-[#00ff88]/10 border border-[#00ff88]/30 text-[#00ff88] text-sm hover:bg-[#00ff88]/20 transition-all"
+                  >
+                    İndir
+                  </a>
+                  <button
+                    onClick={() => { setImageResult(null); setImageError(''); }}
+                    className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-[#666] text-sm hover:text-[#888] transition-all"
+                  >
+                    Temizle
+                  </button>
+                </div>
+                {imageResult.revisedPrompt && (
+                  <details className="text-xs">
+                    <summary className="text-[#444] cursor-pointer hover:text-[#666]">Üretilen prompt'u gör</summary>
+                    <p className="text-[#333] mt-2 leading-relaxed">{imageResult.revisedPrompt}</p>
+                  </details>
+                )}
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12">
+                <div className="w-20 h-20 rounded-2xl bg-[#00ff88]/5 border border-[#00ff88]/10 flex items-center justify-center">
+                  <span className="text-4xl">🎨</span>
+                </div>
+                <p className="text-[#444] text-sm">Görsel burada görünecek</p>
+                <p className="text-[#333] text-xs">Formu doldurup butona tıkla</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VIDEO PIPELINE TAB */}
+      {activeTab === 2 && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           <div className="bg-[#111118] rounded-xl border border-white/5 p-5 space-y-4">
             <h2 className="text-white font-semibold text-sm">AI Video Production Pipeline</h2>
@@ -502,7 +633,7 @@ export default function Creative() {
       )}
 
       {/* VOICEOVER TAB */}
-      {activeTab === 2 && (
+      {activeTab === 3 && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           <div className="bg-[#111118] rounded-xl border border-white/5 p-5 space-y-4">
             <h2 className="text-white font-semibold text-sm">Seslendirme Oluştur</h2>
@@ -576,7 +707,7 @@ export default function Creative() {
       )}
 
       {/* SCORE LIBRARY TAB */}
-      {activeTab === 3 && (
+      {activeTab === 4 && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
           {/* Creative list */}
           <div className="xl:col-span-1 bg-[#111118] rounded-xl border border-white/5 overflow-hidden">

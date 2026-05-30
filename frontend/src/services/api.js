@@ -150,6 +150,7 @@ export const aiAPI = {
   getVideoStatus: (jobId) => api.get(`/ai/video/status/${jobId}`),
   generateVoiceover: (data) => api.post('/ai/voiceover', data),
   getVoiceoverStatus: (id) => api.get(`/ai/voiceover/status/${id}`),
+  generateImage: (data) => api.post('/ai/generate-image', data, { timeout: 90000 }),
   analyze: (data) => api.post('/ai/analyze', data, { timeout: AI_TIMEOUT }),
   getGenerations: (params) => api.get('/ai/generations', { params }),
 };

@@ -431,4 +431,72 @@ router.get('/generations', authenticate, async (req, res) => {
   }
 });
 
+// ─── POST /api/ai/generate-image ─────────────────────────────────────────────
+// Generate ad image using DALL-E 3
+router.post('/generate-image', authenticate, aiLimiter, async (req, res) => {
+  const {
+    brandName,
+    productDescription,
+    style = 'photorealistic',
+    platform = 'meta',
+    size = '1024x1024',
+  } = req.body;
+
+  if (!brandName || !productDescription) {
+    return res.status(400).json({ error: 'brandName and productDescription are required' });
+  }
+
+  const aspectMap = {
+    'meta_feed': '1024x1024',
+    'meta_story': '1024x1792',
+    'google_banner': '1792x1024',
+    'tiktok': '1024x1792',
+  };
+  const imageSize = aspectMap[size] || size || '1024x1024';
+
+  const styleGuide = {
+    photorealistic: 'professional product photography, clean white background, studio lighting, high quality commercial ad photo',
+    lifestyle: 'lifestyle photography, natural lighting, people using the product, warm colors, Instagram aesthetic',
+    minimalist: 'minimalist design, clean layout, bold typography, solid color background, modern and sleek',
+    vibrant: 'vibrant colors, dynamic composition, eye-catching, energetic, social media ad style',
+    ugc: 'user generated content style, authentic, casual, real person holding product, natural home environment',
+  };
+
+  const prompt = `Create a high-quality advertising image for "${brandName}". Product: ${productDescription}. Style: ${styleGuide[style] || styleGuide.photorealistic}. This is for a ${platform} ad. No text overlays, no watermarks. Professional advertising photography.`;
+
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/images/generations',
+      {
+        model: 'dall-e-3',
+        prompt,
+        n: 1,
+        size: imageSize,
+        quality: 'standard',
+        response_format: 'url',
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${config.openai.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 60000,
+      }
+    );
+
+    const imageUrl = response.data.data[0].url;
+    const revisedPrompt = response.data.data[0].revised_prompt;
+
+    return res.json({ imageUrl, revisedPrompt, prompt });
+  } catch (err) {
+    const status = err.response?.status;
+    const errMsg = err.response?.data?.error?.message || err.message;
+    if (status === 401) return res.status(401).json({ error: 'OpenAI API anahtarı geçersiz.' });
+    if (status === 429) return res.status(429).json({ error: 'OpenAI rate limit aşıldı, biraz bekle.' });
+    if (status === 402) return res.status(402).json({ error: 'OpenAI kredi yetersiz. Hesabına kredi ekle.' });
+    console.error('[AI] Image generation error:', status, errMsg);
+    return res.status(500).json({ error: errMsg || 'Image generation failed' });
+  }
+});
+
 module.exports = router;
