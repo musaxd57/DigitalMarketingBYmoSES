@@ -454,48 +454,56 @@ router.post('/generate-image', authenticate, aiLimiter, async (req, res) => {
 
   const styleGuide = {
     photorealistic: {
-      visual: 'hyperrealistic commercial product photography, dramatic studio lighting with soft key light and subtle rim light, shallow depth of field, 85mm lens perspective, crisp sharp focus on product, clean gradient background, premium packaging visible, specular highlights, professional color grading',
-      mood: 'premium, trustworthy, high-end retail brand',
+      visual: 'hyperrealistic studio product photography. Single large soft box key light from 45° above-left, creating a clean graduated shadow. Subtle warm rim backlight separating the product from background. 85mm f/2.8 lens, shallow depth of field with product in razor-sharp focus. Clean dark-to-light gradient background. Specular highlights revealing surface materials and textures. Professional commercial color grading with lifted blacks.',
+      mood: 'premium, trustworthy, high-end retail — the kind of image that appears in a luxury magazine spread',
+      negative: 'harsh direct flash, flat even lighting, distracting background, blurry product, multiple products',
     },
     lifestyle: {
-      visual: 'authentic lifestyle photography, golden hour natural window light, bokeh background, real person naturally interacting with product, warm tones, candid editorial feel, shot on full-frame camera',
-      mood: 'warm, relatable, aspirational everyday life',
+      visual: 'authentic lifestyle photography in a real environment. Warm 5500K natural window light from the left side, creating soft directional illumination with gentle shadow. Shallow depth of field f/1.8 with a lived-in background subtly visible. A human hand or person naturally interacting with the product. Warm golden-hour color grade. The scene feels genuinely unscripted and relatable.',
+      mood: 'warm, human, aspirational everyday life — feels like a recommendation from a trusted friend',
+      negative: 'studio lighting, artificial backdrop, overly staged or posed appearance, sterile environment, stock photo aesthetic',
     },
     minimalist: {
-      visual: 'ultra-clean minimalist composition, single product centered on pure white or soft pastel background, geometric shadow, lots of negative space, modern Scandinavian aesthetic, flat lay or slight angle, crisp lines',
-      mood: 'clean, elegant, premium simplicity',
+      visual: 'ultra-clean minimalist composition. Pure white or very soft pastel gradient background. Single product precisely centered with deliberate negative space on all sides. A single clean geometric cast shadow at 30° angle. Crisp sharp focus throughout. Modern Scandinavian commercial aesthetic. Every element has a reason to exist — nothing more, nothing less.',
+      mood: 'clean, breathable, premium in its restraint — simplicity as a luxury signal',
+      negative: 'busy backgrounds, props, clutter, strong colors, multiple products, distracting elements',
     },
     vibrant: {
-      visual: 'bold vibrant colors, dynamic diagonal composition, high saturation, eye-catching contrast, pop art energy, Gen-Z aesthetic, playful props, strong graphic elements around product',
-      mood: 'energetic, youthful, attention-grabbing',
+      visual: 'bold vibrant commercial photography. High-saturation punchy color palette with deliberate color contrast between product and background. Dynamic diagonal or low-angle composition creating visual tension. Gen-Z aesthetic energy with confident graphic presence. Product lit dramatically with colored accent light. The image should stop a fast-scrolling thumb immediately.',
+      mood: 'electric, youthful, unapologetically attention-grabbing — a visual that refuses to be ignored',
+      negative: 'muted or desaturated colors, safe predictable composition, corporate stiffness, flat uninspiring lighting',
     },
     ugc: {
-      visual: 'authentic user-generated content style, casual home environment, natural handheld feel, slightly imperfect framing, genuine unboxing or usage moment, relatable setting, warm indoor light',
-      mood: 'honest, authentic, peer recommendation feel',
+      visual: 'authentic user-generated content style. Natural warm side window light, real home or café environment with believable background details. Shot with a slight handheld imperfection at f/1.8 on iPhone 15 Pro quality. Genuine usage moment — the product in someone\'s hand or being used naturally. Slight film grain, warm color temperature. The viewer should feel they are seeing a real person\'s honest recommendation.',
+      mood: 'honest, peer-to-peer authentic — trust built through imperfection and genuine human connection',
+      negative: 'studio lighting, tripod-perfect framing, artificial backdrop, staged composition, commercial stiffness, stock photo aesthetic',
     },
   };
 
   const platformContext = {
-    meta: 'Facebook/Instagram feed ad, 1:1 square format, thumb-stopping scroll composition',
-    instagram: 'Instagram feed ad, clean aesthetic, save-worthy visual quality',
-    tiktok: 'TikTok vertical ad, bold visual hook, fast attention capture in top third of frame',
-    google: 'Google display banner, clear product focus, strong visual contrast',
+    meta: 'Facebook/Instagram feed ad, square 1:1 format. Thumb-stopping composition that communicates the product clearly within 1 second of viewing.',
+    instagram: 'Instagram feed ad. Aesthetic-first, visually cohesive, save-worthy quality that earns a place in a curated feed.',
+    tiktok: 'TikTok vertical ad. Bold visual hook concentrated in the top third of the frame. Immediate visual impact for a fast-scrolling mobile audience.',
+    google: 'Google display banner ad. Clear product hero, strong value-communicating visual contrast, readable at small sizes.',
   };
 
   const guide = styleGuide[style] || styleGuide.photorealistic;
-  const prompt = `A professional advertising photograph for a brand called "${brandName}" selling "${productDescription}".
+  const prompt = `Create a world-class advertising photograph for the brand "${brandName}" featuring their product: "${productDescription}".
 
-Visual style: ${guide.visual}.
-Mood & feel: ${guide.mood}.
-Platform context: ${platformContext[platform] || platformContext.meta}.
+VISUAL DIRECTION: ${guide.visual}
 
-Requirements:
-- The product must be the clear hero and focal point
-- No text, typography, logos, watermarks, or overlays anywhere in the image
-- No busy or distracting backgrounds unless lifestyle style
-- Photo-realistic, not illustrated or cartoon
-- High resolution commercial ad quality
-- Ready to use as a social media advertisement`;
+MOOD & FEELING: ${guide.mood}
+
+PLATFORM: ${platformContext[platform] || platformContext.meta}
+
+ABSOLUTE RULES — these cannot be broken:
+- The product is the undisputed hero and sole focal point of the image
+- Zero text, typography, letters, numbers, logos, watermarks, captions or overlays of any kind anywhere in the image
+- Photorealistic — not illustrated, not cartoon, not graphic design
+- Commercial advertising quality — this image will run as a paid advertisement
+- The image must make a viewer want to own or try the product
+
+AVOID: ${guide.negative}`;
 
   try {
     const response = await axios.post(
