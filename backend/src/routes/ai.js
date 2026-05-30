@@ -446,11 +446,14 @@ router.post('/generate-image', authenticate, aiLimiter, async (req, res) => {
 
   const aspectMap = {
     'meta_feed': '1024x1024',
-    'meta_story': '1024x1792',
-    'google_banner': '1792x1024',
-    'tiktok': '1024x1792',
+    'meta_story': '1024x1024',
+    'google_banner': '1024x1024',
+    'tiktok': '1024x1024',
   };
-  const imageSize = aspectMap[size] || size || '1024x1024';
+  // dall-e-2 sizes: 256x256, 512x512, 1024x1024
+  const validSizes = ['256x256', '512x512', '1024x1024'];
+  const rawSize = aspectMap[size] || size || '1024x1024';
+  const imageSize = validSizes.includes(rawSize) ? rawSize : '1024x1024';
 
   const styleGuide = {
     photorealistic: 'professional product photography, clean white background, studio lighting, high quality commercial ad photo',
@@ -466,11 +469,10 @@ router.post('/generate-image', authenticate, aiLimiter, async (req, res) => {
     const response = await axios.post(
       'https://api.openai.com/v1/images/generations',
       {
-        model: 'dall-e-3',
+        model: 'dall-e-2',
         prompt,
         n: 1,
         size: imageSize,
-        quality: 'standard',
       },
       {
         headers: {
@@ -482,7 +484,7 @@ router.post('/generate-image', authenticate, aiLimiter, async (req, res) => {
     );
 
     const imageUrl = response.data.data[0].url;
-    const revisedPrompt = response.data.data[0].revised_prompt;
+    const revisedPrompt = response.data.data[0].revised_prompt || null;
 
     return res.json({ imageUrl, revisedPrompt, prompt });
   } catch (err) {
