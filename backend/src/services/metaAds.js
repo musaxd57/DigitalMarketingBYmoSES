@@ -236,6 +236,26 @@ class MetaAdsService {
   }
 
   /**
+   * Upload a base64 image to Meta Ad Images library — returns hash
+   * Used when image comes from gpt-image-1 (returns b64_json, not URL)
+   */
+  async uploadAdImageBase64(b64Data) {
+    try {
+      const base64 = b64Data.includes(',') ? b64Data.split(',')[1] : b64Data;
+      const res = await axios.post(
+        `${this.baseUrl}/act_${this.accountId}/adimages`,
+        { bytes: base64, access_token: this.accessToken }
+      );
+      const images = res.data.images;
+      const imageData = Object.values(images)[0];
+      return { hash: imageData.hash, url: imageData.url || null };
+    } catch (err) {
+      const errData = err.response?.data?.error;
+      throw new Error(`Meta Image Upload (base64): ${errData?.message || err.message}`);
+    }
+  }
+
+  /**
    * Upload a video file buffer to Meta Ad Videos library — returns video ID
    */
   async uploadAdVideo(fileBuffer, filename, mimetype) {

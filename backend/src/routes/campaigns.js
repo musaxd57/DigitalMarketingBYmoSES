@@ -413,7 +413,10 @@ router.post('/upload-image', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Meta ad account not found' });
     }
     const metaService = new MetaAdsService(accountResult.rows[0]);
-    const result = await metaService.uploadAdImage(imageUrl);
+    const isBase64 = imageUrl.startsWith('data:');
+    const result = isBase64
+      ? await metaService.uploadAdImageBase64(imageUrl)
+      : await metaService.uploadAdImage(imageUrl);
     return res.json({
       hash: result.hash,
       url: result.url,
@@ -506,8 +509,12 @@ router.post('/publish-meta', authenticate, async (req, res) => {
     let adId = null;
 
     // If imageUrl provided, upload to Meta and create full ad
+    const _uploadImage = (url) => url.startsWith('data:')
+      ? metaService.uploadAdImageBase64(url)
+      : metaService.uploadAdImage(url);
+
     if (imageUrl && pageId && destinationUrl) {
-      const uploaded = await metaService.uploadAdImage(imageUrl);
+      const uploaded = await _uploadImage(imageUrl);
       imageHash = uploaded.hash;
 
       const creative = await metaService.createAdCreative({
@@ -527,8 +534,7 @@ router.post('/publish-meta', authenticate, async (req, res) => {
       });
       adId = ad.id;
     } else if (imageUrl) {
-      // Just upload image, no creative (page_id missing)
-      const uploaded = await metaService.uploadAdImage(imageUrl);
+      const uploaded = await _uploadImage(imageUrl);
       imageHash = uploaded.hash;
     }
 
