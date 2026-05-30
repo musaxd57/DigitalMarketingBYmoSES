@@ -121,6 +121,8 @@ export const campaignsAPI = {
   update: (id, data) => api.put(`/campaigns/${id}`, data),
   sync: (data) => api.post('/campaigns/sync', data),
   publishMeta: (data) => api.post('/campaigns/publish-meta', data),
+  uploadImageToMeta: (data) => api.post('/campaigns/upload-image', data),
+  getMetaPages: (data) => api.post('/campaigns/meta-pages', data),
 };
 
 // ─── Analytics API ────────────────────────────────────────────────────────────

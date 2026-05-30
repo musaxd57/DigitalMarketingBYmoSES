@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { aiAPI, creativeAPI } from '../services/api';
+import { aiAPI, creativeAPI, accountsAPI, campaignsAPI } from '../services/api';
 import CreativeScoreCard from '../components/CreativeScoreCard';
 import { useSocket } from '../App';
 
@@ -35,6 +35,17 @@ export default function Creative() {
   const [generatingImage, setGeneratingImage] = useState(false);
   const [imageResult, setImageResult] = useState(null);
   const [imageError, setImageError] = useState('');
+
+  // Meta upload state
+  const [metaAccounts, setMetaAccounts] = useState([]);
+  const [metaUploadForm, setMetaUploadForm] = useState({
+    adAccountId: '', campaignName: '', objective: 'TRAFFIC', dailyBudget: '150',
+    pageId: '', destinationUrl: '', adText: '', ageMin: '18', ageMax: '65',
+  });
+  const [metaPages, setMetaPages] = useState([]);
+  const [uploadingToMeta, setUploadingToMeta] = useState(false);
+  const [uploadResult, setUploadResult] = useState(null);
+  const [uploadError, setUploadError] = useState('');
 
   // Voiceover state
   const [voiceForm, setVoiceForm] = useState({ text: '', voice: 'nova', model: 'tts-1' });
@@ -83,18 +94,72 @@ export default function Creative() {
     }
   };
 
+  useEffect(() => {
+    accountsAPI.list().then((res) => {
+      const meta = (res.data.accounts || []).filter((a) => a.platform === 'meta' && a.is_active);
+      setMetaAccounts(meta);
+    }).catch(() => {});
+  }, []);
+
   const handleGenerateImage = async () => {
     if (!imageForm.brandName || !imageForm.productDescription) return;
     setGeneratingImage(true);
     setImageResult(null);
     setImageError('');
+    setUploadResult(null);
     try {
       const res = await aiAPI.generateImage(imageForm);
       setImageResult(res.data);
+      if (imageForm.brandName) {
+        setMetaUploadForm((f) => ({ ...f, campaignName: imageForm.brandName + ' - Reklam', adText: imageForm.productDescription }));
+      }
     } catch (err) {
       setImageError(err.response?.data?.error || err.message);
     } finally {
       setGeneratingImage(false);
+    }
+  };
+
+  const handleAccountChange = async (accountId) => {
+    setMetaUploadForm((f) => ({ ...f, adAccountId: accountId, pageId: '' }));
+    setMetaPages([]);
+    if (!accountId) return;
+    try {
+      const res = await campaignsAPI.getMetaPages({ adAccountId: accountId });
+      setMetaPages(res.data.pages || []);
+    } catch { /* pages are optional */ }
+  };
+
+  const handlePublishWithImage = async () => {
+    if (!metaUploadForm.adAccountId || !metaUploadForm.campaignName || !metaUploadForm.dailyBudget) {
+      setUploadError('Hesap, kampanya adı ve bütçe zorunludur.');
+      return;
+    }
+    setUploadingToMeta(true);
+    setUploadError('');
+    setUploadResult(null);
+    try {
+      const targeting = {
+        geo_locations: { countries: ['TR'] },
+        age_min: parseInt(metaUploadForm.ageMin) || 18,
+        age_max: parseInt(metaUploadForm.ageMax) || 65,
+      };
+      const res = await campaignsAPI.publishMeta({
+        adAccountId: metaUploadForm.adAccountId,
+        name: metaUploadForm.campaignName,
+        objective: metaUploadForm.objective,
+        dailyBudget: parseFloat(metaUploadForm.dailyBudget),
+        targeting,
+        imageUrl: imageResult.imageUrl,
+        pageId: metaUploadForm.pageId || undefined,
+        destinationUrl: metaUploadForm.destinationUrl || undefined,
+        adText: metaUploadForm.adText || undefined,
+      });
+      setUploadResult(res.data);
+    } catch (err) {
+      setUploadError(err.response?.data?.error || err.message);
+    } finally {
+      setUploadingToMeta(false);
     }
   };
 
@@ -447,12 +512,148 @@ export default function Creative() {
                     İndir
                   </a>
                   <button
-                    onClick={() => { setImageResult(null); setImageError(''); }}
+                    onClick={() => { setImageResult(null); setImageError(''); setUploadResult(null); setUploadError(''); }}
                     className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-[#666] text-sm hover:text-[#888] transition-all"
                   >
                     Temizle
                   </button>
                 </div>
+
+                {/* Meta Publish Panel */}
+                {uploadResult ? (
+                  <div className="bg-[#00ff88]/5 border border-[#00ff88]/20 rounded-xl p-4 space-y-2">
+                    <p className="text-[#00ff88] text-sm font-medium">✓ {uploadResult.message}</p>
+                    {uploadResult.meta?.campaignId && (
+                      <p className="text-[#555] text-xs font-mono">Kampanya ID: {uploadResult.meta.campaignId}</p>
+                    )}
+                    {uploadResult.meta?.imageHash && (
+                      <p className="text-[#555] text-xs font-mono">Görsel Hash: {uploadResult.meta.imageHash}</p>
+                    )}
+                    {uploadResult.meta?.adId && (
+                      <p className="text-[#00ff88] text-xs">+ Reklam oluşturuldu (ID: {uploadResult.meta.adId})</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="border border-[#1877f2]/20 rounded-xl p-4 bg-[#1877f2]/5 space-y-3">
+                    <p className="text-[#1877f2] text-sm font-medium">Meta Ads'te Yayınla</p>
+
+                    {uploadError && (
+                      <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-red-400 text-xs">{uploadError}</div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="col-span-2">
+                        <label className="block text-[#555] text-xs font-mono mb-1">Meta Hesabı *</label>
+                        <select
+                          className="w-full bg-[#0d0d14] border border-white/10 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-[#1877f2]/50"
+                          value={metaUploadForm.adAccountId}
+                          onChange={(e) => handleAccountChange(e.target.value)}
+                        >
+                          <option value="">Hesap seç</option>
+                          {metaAccounts.map((a) => (
+                            <option key={a.id} value={a.id}>{a.account_name}</option>
+                          ))}
+                        </select>
+                        {metaAccounts.length === 0 && (
+                          <p className="text-[#444] text-xs mt-1">Meta hesabı bağlı değil — Ayarlar'dan bağla</p>
+                        )}
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-[#555] text-xs font-mono mb-1">Kampanya Adı *</label>
+                        <input
+                          className="w-full bg-[#0d0d14] border border-white/10 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-[#1877f2]/50"
+                          value={metaUploadForm.campaignName}
+                          onChange={(e) => setMetaUploadForm((f) => ({ ...f, campaignName: e.target.value }))}
+                          placeholder="Kampanya adı"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[#555] text-xs font-mono mb-1">Günlük Bütçe (TRY)</label>
+                        <input type="number" min="50"
+                          className="w-full bg-[#0d0d14] border border-white/10 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-[#1877f2]/50"
+                          value={metaUploadForm.dailyBudget}
+                          onChange={(e) => setMetaUploadForm((f) => ({ ...f, dailyBudget: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[#555] text-xs font-mono mb-1">Hedef</label>
+                        <select
+                          className="w-full bg-[#0d0d14] border border-white/10 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-[#1877f2]/50"
+                          value={metaUploadForm.objective}
+                          onChange={(e) => setMetaUploadForm((f) => ({ ...f, objective: e.target.value }))}
+                        >
+                          <option value="TRAFFIC">Trafik</option>
+                          <option value="CONVERSIONS">Dönüşüm</option>
+                          <option value="BRAND_AWARENESS">Marka Bilinirliği</option>
+                          <option value="ENGAGEMENT">Etkileşim</option>
+                          <option value="LEAD_GENERATION">Lead</option>
+                        </select>
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-[#555] text-xs font-mono mb-1">
+                          Hedef URL <span className="text-[#333]">(Tam reklam oluşturmak için)</span>
+                        </label>
+                        <input
+                          className="w-full bg-[#0d0d14] border border-white/10 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-[#1877f2]/50"
+                          placeholder="https://illiyyun.com"
+                          value={metaUploadForm.destinationUrl}
+                          onChange={(e) => setMetaUploadForm((f) => ({ ...f, destinationUrl: e.target.value }))}
+                        />
+                      </div>
+                      {metaUploadForm.destinationUrl && (
+                        <>
+                          <div className="col-span-2">
+                            <label className="block text-[#555] text-xs font-mono mb-1">
+                              Facebook Sayfası {metaPages.length > 0 ? '' : <span className="text-[#333]">(sayfa bulunamadı — ID gir)</span>}
+                            </label>
+                            {metaPages.length > 0 ? (
+                              <select
+                                className="w-full bg-[#0d0d14] border border-white/10 text-white text-xs rounded-lg px-2 py-2"
+                                value={metaUploadForm.pageId}
+                                onChange={(e) => setMetaUploadForm((f) => ({ ...f, pageId: e.target.value }))}
+                              >
+                                <option value="">Sayfa seç</option>
+                                {metaPages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </select>
+                            ) : (
+                              <input
+                                className="w-full bg-[#0d0d14] border border-white/10 text-white text-xs rounded-lg px-2 py-2"
+                                placeholder="Facebook Sayfa ID"
+                                value={metaUploadForm.pageId}
+                                onChange={(e) => setMetaUploadForm((f) => ({ ...f, pageId: e.target.value }))}
+                              />
+                            )}
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-[#555] text-xs font-mono mb-1">Reklam Metni</label>
+                            <textarea rows={2}
+                              className="w-full bg-[#0d0d14] border border-white/10 text-white text-xs rounded-lg px-2 py-2 resize-none"
+                              value={metaUploadForm.adText}
+                              onChange={(e) => setMetaUploadForm((f) => ({ ...f, adText: e.target.value }))}
+                              placeholder="Reklamda gösterilecek metin..."
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={handlePublishWithImage}
+                      disabled={uploadingToMeta || !metaUploadForm.adAccountId || !metaUploadForm.campaignName}
+                      className="w-full py-2 rounded-lg bg-[#1877f2]/20 border border-[#1877f2]/30 text-[#4da3ff] text-sm font-medium hover:bg-[#1877f2]/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {uploadingToMeta ? (
+                        <><div className="w-4 h-4 border-2 border-[#4da3ff] border-t-transparent rounded-full animate-spin" /> Yükleniyor...</>
+                      ) : (
+                        metaUploadForm.destinationUrl && metaUploadForm.pageId
+                          ? '🚀 Görsel + Kampanya + Reklam Oluştur'
+                          : '📤 Görsel Yükle + Kampanya Oluştur'
+                      )}
+                    </button>
+                    <p className="text-[#333] text-xs text-center">Kampanya duraklatılmış olarak oluşturulur</p>
+                  </div>
+                )}
+
                 {imageResult.revisedPrompt && (
                   <details className="text-xs">
                     <summary className="text-[#444] cursor-pointer hover:text-[#666]">Üretilen prompt'u gör</summary>
