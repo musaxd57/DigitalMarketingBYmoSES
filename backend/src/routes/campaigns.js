@@ -294,9 +294,58 @@ router.post('/sync', authenticate, syncLimiter, async (req, res) => {
   }
 });
 
+// POST /api/campaigns/upload-image - upload image URL to Meta ad library
+router.post('/upload-image', authenticate, async (req, res) => {
+  const { adAccountId, imageUrl } = req.body;
+  if (!adAccountId || !imageUrl) {
+    return res.status(400).json({ error: 'adAccountId and imageUrl are required' });
+  }
+  try {
+    const accountResult = await pool.query(
+      `SELECT * FROM ad_accounts WHERE id = $1 AND tenant_id = $2 AND platform = 'meta' AND is_active = true`,
+      [adAccountId, req.user.tenantId]
+    );
+    if (accountResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Meta ad account not found' });
+    }
+    const metaService = new MetaAdsService(accountResult.rows[0]);
+    const result = await metaService.uploadAdImage(imageUrl);
+    return res.json({
+      hash: result.hash,
+      url: result.url,
+      message: 'Görsel Meta Ads kitaplığına yüklendi',
+    });
+  } catch (err) {
+    console.error('[Campaigns] Image upload error:', err.message);
+    return res.status(500).json({ error: err.message || 'Failed to upload image to Meta' });
+  }
+});
+
+// POST /api/campaigns/meta-pages - get FB pages for an ad account
+router.post('/meta-pages', authenticate, async (req, res) => {
+  const { adAccountId } = req.body;
+  if (!adAccountId) return res.status(400).json({ error: 'adAccountId required' });
+  try {
+    const accountResult = await pool.query(
+      `SELECT * FROM ad_accounts WHERE id = $1 AND tenant_id = $2 AND platform = 'meta' AND is_active = true`,
+      [adAccountId, req.user.tenantId]
+    );
+    if (accountResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Meta ad account not found' });
+    }
+    const metaService = new MetaAdsService(accountResult.rows[0]);
+    const pages = await metaService.getConnectedPages();
+    return res.json({ pages });
+  } catch (err) {
+    console.error('[Campaigns] Meta pages error:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/campaigns/publish-meta - create real campaign on Meta Ads
 router.post('/publish-meta', authenticate, async (req, res) => {
-  const { adAccountId, name, objective, dailyBudget, targeting, startDate } = req.body;
+  const { adAccountId, name, objective, dailyBudget, targeting, startDate,
+          imageUrl, pageId, adText, destinationUrl } = req.body;
 
   if (!adAccountId || !name || !objective || !dailyBudget) {
     return res.status(400).json({ error: 'adAccountId, name, objective, dailyBudget are required' });
@@ -348,6 +397,37 @@ router.post('/publish-meta', authenticate, async (req, res) => {
       startTime: startDate ? new Date(startDate).toISOString() : undefined,
     });
 
+    let imageHash = null;
+    let creativeId = null;
+    let adId = null;
+
+    // If imageUrl provided, upload to Meta and create full ad
+    if (imageUrl && pageId && destinationUrl) {
+      const uploaded = await metaService.uploadAdImage(imageUrl);
+      imageHash = uploaded.hash;
+
+      const creative = await metaService.createAdCreative({
+        name: `${name} - Kreatif`,
+        pageId,
+        imageHash,
+        linkUrl: destinationUrl,
+        message: adText || name,
+        headline: name,
+      });
+      creativeId = creative.id;
+
+      const ad = await metaService.createAd({
+        name: `${name} - Reklam`,
+        adSetId: metaAdSet.id,
+        creativeId,
+      });
+      adId = ad.id;
+    } else if (imageUrl) {
+      // Just upload image, no creative (page_id missing)
+      const uploaded = await metaService.uploadAdImage(imageUrl);
+      imageHash = uploaded.hash;
+    }
+
     // Save to local DB
     const dbResult = await pool.query(
       `INSERT INTO campaigns
@@ -366,13 +446,21 @@ router.post('/publish-meta', authenticate, async (req, res) => {
       ]
     );
 
+    const fullAd = !!(imageHash && creativeId && adId);
     return res.status(201).json({
       campaign: dbResult.rows[0],
       meta: {
         campaignId: metaCampaign.id,
         adSetId: metaAdSet.id,
+        imageHash: imageHash || undefined,
+        creativeId: creativeId || undefined,
+        adId: adId || undefined,
       },
-      message: 'Kampanya Meta Ads\'te oluşturuldu (duraklatılmış)',
+      message: fullAd
+        ? 'Kampanya + Reklam Seti + Görsel + Reklam Meta Ads\'te oluşturuldu (duraklatılmış)'
+        : imageHash
+          ? 'Kampanya oluşturuldu, görsel kitaplığa yüklendi (duraklatılmış)'
+          : 'Kampanya Meta Ads\'te oluşturuldu (duraklatılmış)',
     });
   } catch (err) {
     console.error('[Campaigns] Meta publish error:', err.message);

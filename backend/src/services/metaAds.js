@@ -215,6 +215,100 @@ class MetaAdsService {
   }
 
   /**
+   * Upload an image URL to Meta Ad Images library — returns hash for use in creatives
+   */
+  async uploadAdImage(imageUrl) {
+    try {
+      const res = await axios.post(
+        `${this.baseUrl}/act_${this.accountId}/adimages`,
+        {
+          url: imageUrl,
+          access_token: this.accessToken,
+        }
+      );
+      const images = res.data.images;
+      const imageData = Object.values(images)[0];
+      return { hash: imageData.hash, url: imageData.url || imageUrl };
+    } catch (err) {
+      const errData = err.response?.data?.error;
+      throw new Error(`Meta Image Upload: ${errData?.message || err.message}`);
+    }
+  }
+
+  /**
+   * Create an ad creative (requires page_id + image_hash + link)
+   */
+  async createAdCreative({ name, pageId, imageHash, linkUrl, message, callToAction = 'LEARN_MORE', headline }) {
+    try {
+      const res = await axios.post(
+        `${this.baseUrl}/act_${this.accountId}/adcreatives`,
+        {
+          name,
+          object_story_spec: {
+            page_id: pageId,
+            link_data: {
+              image_hash: imageHash,
+              link: linkUrl,
+              message,
+              name: headline || name,
+              call_to_action: {
+                type: callToAction,
+                value: { link: linkUrl },
+              },
+            },
+          },
+          access_token: this.accessToken,
+        }
+      );
+      return res.data;
+    } catch (err) {
+      const errData = err.response?.data?.error;
+      throw new Error(`Meta Creative Create: ${errData?.message || err.message}`);
+    }
+  }
+
+  /**
+   * Create an ad in an ad set
+   */
+  async createAd({ name, adSetId, creativeId }) {
+    try {
+      const res = await axios.post(
+        `${this.baseUrl}/act_${this.accountId}/ads`,
+        {
+          name,
+          adset_id: adSetId,
+          creative: { creative_id: creativeId },
+          status: 'PAUSED',
+          access_token: this.accessToken,
+        }
+      );
+      return res.data;
+    } catch (err) {
+      const errData = err.response?.data?.error;
+      throw new Error(`Meta Ad Create: ${errData?.message || err.message}`);
+    }
+  }
+
+  /**
+   * Get Facebook pages connected to this ad account's business
+   */
+  async getConnectedPages() {
+    try {
+      const res = await this.request(`/act_${this.accountId}`, {
+        fields: 'business',
+      });
+      if (!res.business) return [];
+      const pagesRes = await this.request(`/${res.business.id}/owned_pages`, {
+        fields: 'id,name',
+        limit: 20,
+      });
+      return pagesRes.data || [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Create a campaign on Meta Ads
    */
   async createCampaign({ name, objective, status = 'PAUSED', specialAdCategories = [] }) {
