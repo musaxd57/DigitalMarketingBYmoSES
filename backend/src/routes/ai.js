@@ -471,7 +471,6 @@ router.post('/generate-image', authenticate, aiLimiter, async (req, res) => {
         n: 1,
         size: imageSize,
         quality: 'standard',
-        response_format: 'url',
       },
       {
         headers: {
