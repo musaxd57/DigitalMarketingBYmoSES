@@ -1,12 +1,16 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { body, validationResult } = require('express-validator');
 const router = express.Router();
 const { pool, transaction } = require('../models/db');
 const config = require('../config');
 const { authLimiter } = require('../middleware/rateLimiter');
+
+// In-memory store for password reset tokens (MVP approach)
+const resetTokens = new Map(); // token -> { userId, firstName, expires }
 
 const SALT_ROUNDS = 12;
 
@@ -281,6 +285,89 @@ router.post('/logout', async (req, res) => {
 // GET /api/auth/me
 router.get('/me', require('../middleware/auth').authenticate, async (req, res) => {
   return res.json({ user: req.user, tenant: req.tenant });
+});
+
+// POST /api/auth/forgot-password
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+  try {
+    const userResult = await pool.query(
+      'SELECT id, first_name FROM users WHERE email = $1',
+      [email.toLowerCase()]
+    );
+    // Always return success to prevent email enumeration
+    if (userResult.rows.length === 0) {
+      return res.json({ message: 'If that email exists, a reset link was sent.' });
+    }
+
+    const user = userResult.rows[0];
+    const token = crypto.randomBytes(32).toString('hex');
+    const expires = Date.now() + 60 * 60 * 1000; // 1 hour
+
+    // Store token in memory map
+    resetTokens.set(token, { userId: user.id, firstName: user.first_name, expires });
+
+    // Clean up old tokens periodically
+    for (const [t, data] of resetTokens.entries()) {
+      if (data.expires < Date.now()) resetTokens.delete(t);
+    }
+
+    // Send email if SMTP configured
+    if (config.email && config.email.user) {
+      try {
+        const nodemailer = require('nodemailer');
+        const transporter = nodemailer.createTransport({
+          host: config.email.host,
+          port: config.email.port,
+          auth: { user: config.email.user, pass: config.email.pass },
+        });
+        const origin = (config.cors && config.cors.origin) || 'http://localhost:5173';
+        const resetUrl = `${origin}/reset-password?token=${token}`;
+        await transporter.sendMail({
+          from: config.email.from,
+          to: email,
+          subject: 'Şifre Sıfırlama - Digital Marketing by Moses',
+          html: `<p>Merhaba ${user.first_name},</p><p>Şifrenizi sıfırlamak için <a href="${resetUrl}">buraya tıklayın</a>.</p><p>Bu link 1 saat geçerlidir.</p>`,
+        });
+      } catch (mailErr) {
+        console.warn('[Auth] Email send failed (non-fatal):', mailErr.message);
+      }
+    } else {
+      // Dev mode: log the token so it can be used without SMTP
+      console.log(`[Auth] Password reset token for ${email}: ${token}`);
+    }
+
+    return res.json({ message: 'If that email exists, a reset link was sent.' });
+  } catch (err) {
+    console.error('[Auth] Forgot password error:', err.message);
+    return res.status(500).json({ error: 'Failed to process request' });
+  }
+});
+
+// POST /api/auth/reset-password
+router.post('/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ error: 'Token and password required' });
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+  const entry = resetTokens.get(token);
+  if (!entry || entry.expires < Date.now()) {
+    return res.status(400).json({ error: 'Invalid or expired reset token' });
+  }
+
+  try {
+    const hashedPassword = await bcrypt.hash(password, 12);
+    await pool.query(
+      'UPDATE users SET password_hash = $1 WHERE id = $2',
+      [hashedPassword, entry.userId]
+    );
+    resetTokens.delete(token);
+    return res.json({ message: 'Password reset successfully' });
+  } catch (err) {
+    console.error('[Auth] Reset password error:', err.message);
+    return res.status(500).json({ error: 'Failed to reset password' });
+  }
 });
 
 module.exports = router;

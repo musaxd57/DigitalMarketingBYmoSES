@@ -100,6 +100,8 @@ export const authAPI = {
   logout: (refreshToken) => api.post('/auth/logout', { refreshToken }),
   getMe: () => api.get('/auth/me'),
   refresh: (refreshToken) => api.post('/auth/refresh', { refreshToken }),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }),
 };
 
 // ─── Accounts API ─────────────────────────────────────────────────────────────
