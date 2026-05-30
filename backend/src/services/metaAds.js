@@ -455,7 +455,7 @@ class MetaAdsService {
   /**
    * Create an ad set on Meta Ads
    */
-  async createAdSet({ campaignId, name, dailyBudget, targeting, optimizationGoal = 'LANDING_PAGE_VIEWS', billingEvent = 'IMPRESSIONS', startTime }) {
+  async createAdSet({ campaignId, name, dailyBudget, targeting, optimizationGoal = 'LINK_CLICKS', billingEvent = 'LINK_CLICKS', startTime }) {
     try {
       const params = {
         name,
@@ -463,6 +463,7 @@ class MetaAdsService {
         daily_budget: Math.round(dailyBudget * 100),
         billing_event: billingEvent,
         optimization_goal: optimizationGoal,
+        bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
         targeting: JSON.stringify(targeting),
         status: 'PAUSED',
         access_token: this.accessToken,
