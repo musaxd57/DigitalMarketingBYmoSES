@@ -453,14 +453,49 @@ router.post('/generate-image', authenticate, aiLimiter, async (req, res) => {
   const imageSize = aspectMap[size] || '1024x1024';
 
   const styleGuide = {
-    photorealistic: 'professional product photography, clean white background, studio lighting, high quality commercial ad photo',
-    lifestyle: 'lifestyle photography, natural lighting, people using the product, warm colors, Instagram aesthetic',
-    minimalist: 'minimalist design, clean layout, bold typography, solid color background, modern and sleek',
-    vibrant: 'vibrant colors, dynamic composition, eye-catching, energetic, social media ad style',
-    ugc: 'user generated content style, authentic, casual, real person holding product, natural home environment',
+    photorealistic: {
+      visual: 'hyperrealistic commercial product photography, dramatic studio lighting with soft key light and subtle rim light, shallow depth of field, 85mm lens perspective, crisp sharp focus on product, clean gradient background, premium packaging visible, specular highlights, professional color grading',
+      mood: 'premium, trustworthy, high-end retail brand',
+    },
+    lifestyle: {
+      visual: 'authentic lifestyle photography, golden hour natural window light, bokeh background, real person naturally interacting with product, warm tones, candid editorial feel, shot on full-frame camera',
+      mood: 'warm, relatable, aspirational everyday life',
+    },
+    minimalist: {
+      visual: 'ultra-clean minimalist composition, single product centered on pure white or soft pastel background, geometric shadow, lots of negative space, modern Scandinavian aesthetic, flat lay or slight angle, crisp lines',
+      mood: 'clean, elegant, premium simplicity',
+    },
+    vibrant: {
+      visual: 'bold vibrant colors, dynamic diagonal composition, high saturation, eye-catching contrast, pop art energy, Gen-Z aesthetic, playful props, strong graphic elements around product',
+      mood: 'energetic, youthful, attention-grabbing',
+    },
+    ugc: {
+      visual: 'authentic user-generated content style, casual home environment, natural handheld feel, slightly imperfect framing, genuine unboxing or usage moment, relatable setting, warm indoor light',
+      mood: 'honest, authentic, peer recommendation feel',
+    },
   };
 
-  const prompt = `Create a high-quality advertising image for "${brandName}". Product: ${productDescription}. Style: ${styleGuide[style] || styleGuide.photorealistic}. This is for a ${platform} ad. No text overlays, no watermarks. Professional advertising photography.`;
+  const platformContext = {
+    meta: 'Facebook/Instagram feed ad, 1:1 square format, thumb-stopping scroll composition',
+    instagram: 'Instagram feed ad, clean aesthetic, save-worthy visual quality',
+    tiktok: 'TikTok vertical ad, bold visual hook, fast attention capture in top third of frame',
+    google: 'Google display banner, clear product focus, strong visual contrast',
+  };
+
+  const guide = styleGuide[style] || styleGuide.photorealistic;
+  const prompt = `A professional advertising photograph for a brand called "${brandName}" selling "${productDescription}".
+
+Visual style: ${guide.visual}.
+Mood & feel: ${guide.mood}.
+Platform context: ${platformContext[platform] || platformContext.meta}.
+
+Requirements:
+- The product must be the clear hero and focal point
+- No text, typography, logos, watermarks, or overlays anywhere in the image
+- No busy or distracting backgrounds unless lifestyle style
+- Photo-realistic, not illustrated or cartoon
+- High resolution commercial ad quality
+- Ready to use as a social media advertisement`;
 
   try {
     const response = await axios.post(
@@ -470,14 +505,14 @@ router.post('/generate-image', authenticate, aiLimiter, async (req, res) => {
         prompt,
         n: 1,
         size: imageSize,
-        quality: 'medium',
+        quality: 'high',
       },
       {
         headers: {
           Authorization: `Bearer ${config.openai.apiKey}`,
           'Content-Type': 'application/json',
         },
-        timeout: 60000,
+        timeout: 90000,
       }
     );
 
