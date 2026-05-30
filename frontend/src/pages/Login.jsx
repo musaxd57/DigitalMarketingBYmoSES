@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { authAPI } from '../services/api';
 import { useAuth } from '../App';
 
@@ -40,10 +40,11 @@ export default function Login() {
     }
   };
 
-  const inputClass = "w-full bg-[#0d0d14] border border-white/5 text-white text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-[#00ff88]/40 placeholder-[#333] transition-all";
+  const inputClass = "w-full border text-sm rounded-lg px-4 py-3 focus:outline-none focus:border-[#00ff88]/40 placeholder-[#333] transition-all"
+    + " bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]";
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg-primary)' }}>
       {/* Background grid */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 opacity-[0.02]"
@@ -51,6 +52,10 @@ export default function Login() {
             backgroundImage: 'linear-gradient(rgba(0,255,136,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,136,0.5) 1px, transparent 1px)',
             backgroundSize: '40px 40px',
           }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{ background: 'radial-gradient(ellipse at top left, rgba(0,120,255,0.04) 0%, transparent 60%)' }}
         />
       </div>
 
@@ -61,15 +66,19 @@ export default function Login() {
             <div className="w-10 h-10 rounded-xl bg-[#00ff88]/10 border border-[#00ff88]/30 flex items-center justify-center">
               <span className="text-[#00ff88] font-bold text-sm font-mono">AI</span>
             </div>
-            <span className="text-white text-xl font-bold">MktAI Platform</span>
+            <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              Digital Marketing by Moses
+            </span>
           </div>
-          <p className="text-[#555] text-sm">
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
             {mode === 'login' ? 'Sign in to your dashboard' : 'Create your free account'}
           </p>
         </div>
 
         {/* Form */}
-        <div className="bg-[#111118] rounded-2xl border border-white/5 p-6 shadow-2xl">
+        <div className="rounded-2xl border p-6 shadow-2xl"
+          style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+        >
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'register' && (
               <>
@@ -100,7 +109,14 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="block text-[#666] text-xs font-mono mb-1.5">PASSWORD</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[#666] text-xs font-mono">PASSWORD</label>
+                {mode === 'login' && (
+                  <Link to="/forgot-password" className="text-xs text-[#00ff88]/70 hover:text-[#00ff88] transition-colors">
+                    Şifremi unuttum?
+                  </Link>
+                )}
+              </div>
               <input type="password" className={inputClass} placeholder="••••••••" required
                 minLength={8}
                 value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />

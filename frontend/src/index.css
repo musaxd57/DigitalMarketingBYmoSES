@@ -2,8 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg-primary: #080d1a;
+  --bg-secondary: #0a0e1f;
+  --bg-card: rgba(255,255,255,0.04);
+  --border-color: rgba(255,255,255,0.06);
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #475569;
+}
+html.light {
+  --bg-primary: #f0f4ff;
+  --bg-secondary: #e8eeff;
+  --bg-card: #ffffff;
+  --border-color: rgba(0,0,80,0.1);
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+}
+
 *, *::before, *::after { box-sizing: border-box; }
-body { background: #0a0a0f; color: #e0e0e0; font-family: 'Inter', sans-serif; }
+body { background: var(--bg-primary); color: var(--text-primary); font-family: 'Inter', sans-serif; }
 
 /* Shimmer loading animation */
 @keyframes shimmer {

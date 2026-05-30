@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { useAuth } from '../App';
+import { useAuth, useTheme } from '../App';
 
 const NAV_ITEMS = [
   {
@@ -71,6 +71,7 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const { user, tenant, logout } = useAuth();
+  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -78,10 +79,20 @@ export default function Sidebar() {
     navigate('/login');
   };
 
+  const handleThemeToggle = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark');
+  };
+
   return (
-    <aside className="w-[260px] bg-[#0d0d14] border-r border-white/5 flex flex-col h-full flex-shrink-0">
+    <aside
+      className="w-[260px] flex flex-col h-full flex-shrink-0"
+      style={{
+        background: 'var(--bg-secondary)',
+        borderRight: '1px solid var(--border-color)',
+      }}
+    >
       {/* Logo */}
-      <div className="px-6 py-5 border-b border-white/5" style={{ background: 'linear-gradient(to bottom, rgba(0,255,136,0.03), transparent)' }}>
+      <div className="px-6 py-5" style={{ borderBottom: '1px solid var(--border-color)', background: 'linear-gradient(to bottom, rgba(0,255,136,0.03), transparent)' }}>
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#00ff88]/20 to-[#00aaff]/20 border border-[#00ff88]/30 flex items-center justify-center flex-shrink-0">
             <svg className="w-4 h-4 text-[#00ff88]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -89,7 +100,7 @@ export default function Sidebar() {
             </svg>
           </div>
           <div className="min-w-0">
-            <h1 className="text-white font-bold text-sm leading-none tracking-tight">Digital Marketing</h1>
+            <h1 className="font-bold text-sm leading-none tracking-tight" style={{ color: 'var(--text-primary)' }}>Digital Marketing</h1>
             <p className="text-[#00ff88] text-xs mt-0.5 font-mono opacity-70">by Moses</p>
           </div>
         </div>
@@ -97,16 +108,19 @@ export default function Sidebar() {
 
       {/* Tenant info */}
       {tenant && (
-        <div className="px-4 py-3 border-b border-white/5">
-          <div className="flex items-center gap-2 px-2 py-2 rounded-lg bg-white/3">
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border-color)' }}>
+          <div
+            className="flex items-center gap-2 px-2 py-2 rounded-lg"
+            style={{ background: 'var(--bg-card)' }}
+          >
             <div className="w-6 h-6 rounded bg-[#00ff88]/20 flex items-center justify-center flex-shrink-0">
               <span className="text-[#00ff88] text-xs font-bold">
                 {tenant.name?.charAt(0)?.toUpperCase() || 'T'}
               </span>
             </div>
             <div className="min-w-0">
-              <p className="text-white text-xs font-medium truncate">{tenant.name}</p>
-              <p className="text-[#666] text-xs capitalize">{tenant.plan} plan</p>
+              <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{tenant.name}</p>
+              <p className="text-xs capitalize" style={{ color: 'var(--text-muted)' }}>{tenant.plan} plan</p>
             </div>
           </div>
         </div>
@@ -123,14 +137,18 @@ export default function Sidebar() {
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 group relative
               ${isActive
                 ? 'bg-[#00ff88]/10 text-[#00ff88] border border-[#00ff88]/20'
-                : 'text-[#888] hover:text-white hover:bg-white/5 border border-transparent'
+                : 'border border-transparent hover:bg-white/5'
               }`
             }
-            style={({ isActive }) => isActive ? { boxShadow: '0 0 20px rgba(0,255,136,0.08)' } : {}}
+            style={({ isActive }) => ({
+              color: isActive ? '#00ff88' : 'var(--text-secondary)',
+              boxShadow: isActive ? '0 0 20px rgba(0,255,136,0.08)' : 'none',
+            })}
           >
             {({ isActive }) => (
               <>
-                <span className={isActive ? 'text-[#00ff88]' : 'text-[#555] group-hover:text-[#aaa]'}>
+                <span style={{ color: isActive ? '#00ff88' : 'var(--text-muted)' }}
+                  className="group-hover:opacity-80 transition-opacity">
                   {item.icon}
                 </span>
                 <span className="font-medium">{item.label}</span>
@@ -149,8 +167,10 @@ export default function Sidebar() {
       </nav>
 
       {/* Platform status indicators */}
-      <div className="px-4 py-3 border-t border-white/5">
-        <p className="text-[#444] text-xs font-mono uppercase tracking-wider mb-2">Platformlar</p>
+      <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border-color)' }}>
+        <p className="text-xs font-mono uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
+          Platformlar
+        </p>
         <div className="space-y-1.5">
           {[
             { name: 'Meta Ads', color: '#1877f2', connected: true },
@@ -161,33 +181,59 @@ export default function Sidebar() {
               <div
                 className={`w-1.5 h-1.5 rounded-full ${p.connected ? 'animate-pulse' : ''}`}
                 style={{
-                  backgroundColor: p.connected ? '#00ff88' : '#333',
+                  backgroundColor: p.connected ? '#00ff88' : 'var(--text-muted)',
                   boxShadow: p.connected ? '0 0 6px rgba(0,255,136,0.6)' : `0 0 4px ${p.color}44`,
                 }}
               />
-              <span className={`text-xs ${p.connected ? 'text-[#666]' : 'text-[#444]'}`}>{p.name}</span>
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.name}</span>
             </div>
           ))}
         </div>
       </div>
 
+      {/* Theme toggle */}
+      <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border-color)' }}>
+        <button
+          onClick={handleThemeToggle}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all hover:bg-white/5"
+          style={{ color: 'var(--text-secondary)' }}
+          title={theme === 'dark' ? 'Açık moda geç' : 'Koyu moda geç'}
+        >
+          {theme === 'dark' ? (
+            /* Sun icon for dark mode (click to go light) */
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
+            </svg>
+          ) : (
+            /* Moon icon for light mode (click to go dark) */
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          )}
+          <span>{theme === 'dark' ? 'Açık Mod' : 'Koyu Mod'}</span>
+        </button>
+      </div>
+
       {/* User + logout */}
-      <div className="px-4 py-4 border-t border-white/5">
+      <div className="px-4 py-4" style={{ borderTop: '1px solid var(--border-color)' }}>
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#00ff88]/30 to-[#00aaff]/30 flex items-center justify-center flex-shrink-0">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#00ff88]/30 to-[#3b82f6]/30 flex items-center justify-center flex-shrink-0">
             <span className="text-white text-xs font-semibold">
               {user?.firstName?.charAt(0)?.toUpperCase() || 'U'}
             </span>
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-white text-xs font-medium truncate">
+            <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
               {user?.firstName} {user?.lastName}
             </p>
-            <p className="text-[#555] text-xs truncate">{user?.role}</p>
+            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{user?.role}</p>
           </div>
           <button
             onClick={handleLogout}
-            className="text-[#555] hover:text-red-400 transition-colors"
+            className="hover:text-red-400 transition-colors"
+            style={{ color: 'var(--text-muted)' }}
             title="Çıkış Yap"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
