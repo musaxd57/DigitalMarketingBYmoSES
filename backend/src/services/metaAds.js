@@ -430,7 +430,7 @@ class MetaAdsService {
   /**
    * Create a campaign on Meta Ads
    */
-  async createCampaign({ name, objective, status = 'PAUSED', specialAdCategories = [] }) {
+  async createCampaign({ name, objective, status = 'PAUSED' }) {
     try {
       const res = await axios.post(
         `${this.baseUrl}/act_${this.accountId}/campaigns`,
@@ -438,14 +438,16 @@ class MetaAdsService {
           name,
           objective,
           status,
-          special_ad_categories: specialAdCategories,
+          special_ad_categories: [],
           access_token: this.accessToken,
         }
       );
       return res.data;
     } catch (err) {
       const errData = err.response?.data?.error;
-      throw new Error(`Meta Campaign Create: ${errData?.message || err.message}`);
+      const detail = errData?.error_user_msg || errData?.message || err.message;
+      console.error('[MetaAds] createCampaign error:', JSON.stringify(errData || err.message));
+      throw new Error(`Meta Campaign Create: ${detail}`);
     }
   }
 
@@ -473,7 +475,9 @@ class MetaAdsService {
       return res.data;
     } catch (err) {
       const errData = err.response?.data?.error;
-      throw new Error(`Meta AdSet Create: ${errData?.message || err.message}`);
+      const detail = errData?.error_user_msg || errData?.message || err.message;
+      console.error('[MetaAds] createAdSet error:', JSON.stringify(errData || err.message));
+      throw new Error(`Meta AdSet Create: ${detail}`);
     }
   }
 
