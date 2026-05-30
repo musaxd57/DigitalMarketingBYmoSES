@@ -215,6 +215,56 @@ class MetaAdsService {
   }
 
   /**
+   * Create a campaign on Meta Ads
+   */
+  async createCampaign({ name, objective, status = 'PAUSED', specialAdCategories = [] }) {
+    try {
+      const res = await axios.post(
+        `${this.baseUrl}/act_${this.accountId}/campaigns`,
+        {
+          name,
+          objective,
+          status,
+          special_ad_categories: specialAdCategories,
+          access_token: this.accessToken,
+        }
+      );
+      return res.data;
+    } catch (err) {
+      const errData = err.response?.data?.error;
+      throw new Error(`Meta Campaign Create: ${errData?.message || err.message}`);
+    }
+  }
+
+  /**
+   * Create an ad set on Meta Ads
+   */
+  async createAdSet({ campaignId, name, dailyBudget, targeting, optimizationGoal = 'LANDING_PAGE_VIEWS', billingEvent = 'IMPRESSIONS', startTime }) {
+    try {
+      const params = {
+        name,
+        campaign_id: campaignId,
+        daily_budget: Math.round(dailyBudget * 100),
+        billing_event: billingEvent,
+        optimization_goal: optimizationGoal,
+        targeting: JSON.stringify(targeting),
+        status: 'PAUSED',
+        access_token: this.accessToken,
+      };
+      if (startTime) params.start_time = startTime;
+
+      const res = await axios.post(
+        `${this.baseUrl}/act_${this.accountId}/adsets`,
+        params
+      );
+      return res.data;
+    } catch (err) {
+      const errData = err.response?.data?.error;
+      throw new Error(`Meta AdSet Create: ${errData?.message || err.message}`);
+    }
+  }
+
+  /**
    * Parse Meta insights row to standardized format
    */
   _parseInsight(insight) {
