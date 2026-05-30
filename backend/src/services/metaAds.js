@@ -236,6 +236,70 @@ class MetaAdsService {
   }
 
   /**
+   * Upload a video file buffer to Meta Ad Videos library — returns video ID
+   */
+  async uploadAdVideo(fileBuffer, filename, mimetype) {
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('access_token', this.accessToken);
+    form.append('name', filename || 'ad-video');
+    form.append('source', fileBuffer, { filename: filename || 'video.mp4', contentType: mimetype || 'video/mp4' });
+
+    try {
+      const res = await axios.post(
+        `https://graph-video.facebook.com/${this.apiVersion}/act_${this.accountId}/advideos`,
+        form,
+        {
+          headers: { ...form.getHeaders() },
+          timeout: 300000, // 5 min for large videos
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+        }
+      );
+      return { id: res.data.id, title: res.data.title };
+    } catch (err) {
+      const errData = err.response?.data?.error;
+      throw new Error(`Meta Video Upload: ${errData?.message || err.message}`);
+    }
+  }
+
+  /**
+   * Create an ad creative with video (requires page_id + video_id + link)
+   */
+  async createVideoAdCreative({ name, pageId, videoId, linkUrl, message, callToAction = 'LEARN_MORE', headline, thumbnailUrl }) {
+    try {
+      const linkData = {
+        message,
+        link: linkUrl,
+        name: headline || name,
+        call_to_action: { type: callToAction, value: { link: linkUrl } },
+      };
+      if (thumbnailUrl) linkData.picture = thumbnailUrl;
+
+      const res = await axios.post(
+        `${this.baseUrl}/act_${this.accountId}/adcreatives`,
+        {
+          name,
+          object_story_spec: {
+            page_id: pageId,
+            video_data: {
+              video_id: videoId,
+              title: headline || name,
+              message,
+              call_to_action: { type: callToAction, value: { link: linkUrl } },
+            },
+          },
+          access_token: this.accessToken,
+        }
+      );
+      return res.data;
+    } catch (err) {
+      const errData = err.response?.data?.error;
+      throw new Error(`Meta Video Creative: ${errData?.message || err.message}`);
+    }
+  }
+
+  /**
    * Create an ad creative (requires page_id + image_hash + link)
    */
   async createAdCreative({ name, pageId, imageHash, linkUrl, message, callToAction = 'LEARN_MORE', headline }) {
