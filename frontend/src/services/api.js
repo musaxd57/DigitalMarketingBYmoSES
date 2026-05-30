@@ -123,6 +123,11 @@ export const campaignsAPI = {
   publishMeta: (data) => api.post('/campaigns/publish-meta', data),
   uploadImageToMeta: (data) => api.post('/campaigns/upload-image', data),
   getMetaPages: (data) => api.post('/campaigns/meta-pages', data),
+  uploadVideoToMeta: (formData, onProgress) => api.post('/campaigns/upload-video', formData, {
+    timeout: 600000, // 10 min for large videos
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: onProgress,
+  }),
   optimize: (data) => api.post('/campaigns/optimize', data, { timeout: 30000 }),
   applyOptimization: (data) => api.post('/campaigns/apply-optimization', data),
   weeklyReport: (data) => api.post('/campaigns/weekly-report', data),

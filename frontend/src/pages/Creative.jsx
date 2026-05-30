@@ -3,7 +3,7 @@ import { aiAPI, creativeAPI, accountsAPI, campaignsAPI } from '../services/api';
 import CreativeScoreCard from '../components/CreativeScoreCard';
 import { useSocket } from '../App';
 
-const TABS = ['Ad Copy', 'AI Görsel', 'Video Pipeline', 'Voiceover', 'Score Library'];
+const TABS = ['Ad Copy', 'AI Görsel', 'Video Yükle', 'Video Pipeline', 'Voiceover', 'Score Library'];
 
 export default function Creative() {
   const [activeTab, setActiveTab] = useState(0);
@@ -48,6 +48,18 @@ export default function Creative() {
   const [uploadResult, setUploadResult] = useState(null);
   const [uploadError, setUploadError] = useState('');
 
+  // Video upload state
+  const [videoUploadForm, setVideoUploadForm] = useState({
+    adAccountId: '', campaignName: '', objective: 'VIDEO_VIEWS', dailyBudget: '150',
+    pageId: '', destinationUrl: '', adText: '',
+  });
+  const [selectedVideoFile, setSelectedVideoFile] = useState(null);
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [videoUploadResult, setVideoUploadResult] = useState(null);
+  const [videoUploadError, setVideoUploadError] = useState('');
+  const [videoMetaPages, setVideoMetaPages] = useState([]);
+
   // Voiceover state
   const [voiceForm, setVoiceForm] = useState({ text: '', voice: 'nova', model: 'tts-1' });
   const [generatingVoice, setGeneratingVoice] = useState(false);
@@ -60,7 +72,7 @@ export default function Creative() {
   const [scoring, setScoring] = useState(false);
 
   useEffect(() => {
-    if (activeTab === 4) fetchCreatives();
+    if (activeTab === 5) fetchCreatives();
   }, [activeTab]);
 
   useEffect(() => {
@@ -161,6 +173,45 @@ export default function Creative() {
       setUploadError(err.response?.data?.error || err.message);
     } finally {
       setUploadingToMeta(false);
+    }
+  };
+
+  const handleVideoAccountChange = async (accountId) => {
+    setVideoUploadForm((f) => ({ ...f, adAccountId: accountId, pageId: '' }));
+    setVideoMetaPages([]);
+    if (!accountId) return;
+    try {
+      const res = await campaignsAPI.getMetaPages({ adAccountId: accountId });
+      setVideoMetaPages(res.data.pages || []);
+    } catch { /* optional */ }
+  };
+
+  const handleVideoUpload = async () => {
+    if (!selectedVideoFile || !videoUploadForm.adAccountId) return;
+    setUploadingVideo(true);
+    setVideoUploadResult(null);
+    setVideoUploadError('');
+    setVideoUploadProgress(0);
+
+    const fd = new FormData();
+    fd.append('video', selectedVideoFile);
+    fd.append('adAccountId', videoUploadForm.adAccountId);
+    if (videoUploadForm.campaignName) fd.append('campaignName', videoUploadForm.campaignName);
+    if (videoUploadForm.dailyBudget) fd.append('dailyBudget', videoUploadForm.dailyBudget);
+    if (videoUploadForm.objective) fd.append('objective', videoUploadForm.objective);
+    if (videoUploadForm.pageId) fd.append('pageId', videoUploadForm.pageId);
+    if (videoUploadForm.destinationUrl) fd.append('destinationUrl', videoUploadForm.destinationUrl);
+    if (videoUploadForm.adText) fd.append('adText', videoUploadForm.adText);
+
+    try {
+      const res = await campaignsAPI.uploadVideoToMeta(fd, (e) => {
+        if (e.total) setVideoUploadProgress(Math.round((e.loaded / e.total) * 100));
+      });
+      setVideoUploadResult(res.data);
+    } catch (err) {
+      setVideoUploadError(err.response?.data?.error || err.message);
+    } finally {
+      setUploadingVideo(false);
     }
   };
 
@@ -720,8 +771,165 @@ export default function Creative() {
         </div>
       )}
 
-      {/* VIDEO PIPELINE TAB */}
+      {/* VIDEO UPLOAD TAB */}
       {activeTab === 2 && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          {/* Left: form */}
+          <div className="bg-[#111118] rounded-xl border border-white/5 p-5 space-y-4">
+            <h2 className="text-white font-semibold text-sm">Videoyu Meta Ads'e Yükle</h2>
+            <p className="text-[#555] text-xs">MP4 / MOV · Maks. 512 MB · Meta reklam kitaplığına yüklenir</p>
+
+            {/* File picker */}
+            <div>
+              <label className={labelClass}>Video Dosyası *</label>
+              <label className="flex flex-col items-center justify-center gap-2 w-full border-2 border-dashed border-white/10 rounded-xl py-8 px-4 cursor-pointer hover:border-[#00ff88]/30 transition-all">
+                <span className="text-3xl">🎬</span>
+                {selectedVideoFile ? (
+                  <div className="text-center">
+                    <p className="text-white text-sm font-medium">{selectedVideoFile.name}</p>
+                    <p className="text-[#555] text-xs">{(selectedVideoFile.size / 1024 / 1024).toFixed(1)} MB</p>
+                  </div>
+                ) : (
+                  <p className="text-[#555] text-sm">Dosya seç veya sürükle</p>
+                )}
+                <input
+                  type="file"
+                  accept="video/mp4,video/quicktime,video/mov,video/*"
+                  className="hidden"
+                  onChange={(e) => { setSelectedVideoFile(e.target.files[0] || null); setVideoUploadResult(null); setVideoUploadError(''); }}
+                />
+              </label>
+            </div>
+
+            <div>
+              <label className={labelClass}>Meta Hesabı *</label>
+              <select className={inputClass} value={videoUploadForm.adAccountId} onChange={(e) => handleVideoAccountChange(e.target.value)}>
+                <option value="">Hesap seç</option>
+                {metaAccounts.map((a) => <option key={a.id} value={a.id}>{a.account_name}</option>)}
+              </select>
+              {metaAccounts.length === 0 && <p className="text-[#444] text-xs mt-1">Meta hesabı bağlı değil — Ayarlar'dan bağla</p>}
+            </div>
+
+            {/* Optional campaign */}
+            <div className="border border-white/5 rounded-xl p-4 space-y-3 bg-white/2">
+              <p className="text-[#555] text-xs font-mono uppercase tracking-wider">İsteğe Bağlı — Kampanya da Oluştur</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className={labelClass}>Kampanya Adı</label>
+                  <input className={inputClass} placeholder="Kampanya adı"
+                    value={videoUploadForm.campaignName}
+                    onChange={(e) => setVideoUploadForm((f) => ({ ...f, campaignName: e.target.value }))} />
+                </div>
+                <div>
+                  <label className={labelClass}>Günlük Bütçe (TRY)</label>
+                  <input type="number" min="50" className={inputClass}
+                    value={videoUploadForm.dailyBudget}
+                    onChange={(e) => setVideoUploadForm((f) => ({ ...f, dailyBudget: e.target.value }))} />
+                </div>
+                <div>
+                  <label className={labelClass}>Hedef</label>
+                  <select className={inputClass} value={videoUploadForm.objective}
+                    onChange={(e) => setVideoUploadForm((f) => ({ ...f, objective: e.target.value }))}>
+                    <option value="VIDEO_VIEWS">Video Görüntüleme</option>
+                    <option value="TRAFFIC">Trafik</option>
+                    <option value="CONVERSIONS">Dönüşüm</option>
+                    <option value="BRAND_AWARENESS">Marka Bilinirliği</option>
+                    <option value="ENGAGEMENT">Etkileşim</option>
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className={labelClass}>Hedef URL <span className="text-[#333]">(tam reklam için)</span></label>
+                  <input className={inputClass} placeholder="https://illiyyun.com"
+                    value={videoUploadForm.destinationUrl}
+                    onChange={(e) => setVideoUploadForm((f) => ({ ...f, destinationUrl: e.target.value }))} />
+                </div>
+                {videoUploadForm.destinationUrl && (
+                  <>
+                    <div className="col-span-2">
+                      <label className={labelClass}>Facebook Sayfası {videoMetaPages.length === 0 && <span className="text-[#333]">(ID gir)</span>}</label>
+                      {videoMetaPages.length > 0 ? (
+                        <select className={inputClass} value={videoUploadForm.pageId}
+                          onChange={(e) => setVideoUploadForm((f) => ({ ...f, pageId: e.target.value }))}>
+                          <option value="">Sayfa seç</option>
+                          {videoMetaPages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      ) : (
+                        <input className={inputClass} placeholder="Facebook Sayfa ID"
+                          value={videoUploadForm.pageId}
+                          onChange={(e) => setVideoUploadForm((f) => ({ ...f, pageId: e.target.value }))} />
+                      )}
+                    </div>
+                    <div className="col-span-2">
+                      <label className={labelClass}>Reklam Metni</label>
+                      <textarea rows={2} className={inputClass} placeholder="Reklamda gösterilecek metin..."
+                        value={videoUploadForm.adText}
+                        onChange={(e) => setVideoUploadForm((f) => ({ ...f, adText: e.target.value }))} />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {videoUploadError && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-red-400 text-sm">{videoUploadError}</div>
+            )}
+
+            <button
+              onClick={handleVideoUpload}
+              disabled={uploadingVideo || !selectedVideoFile || !videoUploadForm.adAccountId}
+              className="w-full py-2.5 rounded-lg bg-[#1877f2]/10 border border-[#1877f2]/30 text-[#4da3ff] font-medium text-sm hover:bg-[#1877f2]/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {uploadingVideo ? (
+                <><div className="w-4 h-4 border-2 border-[#4da3ff] border-t-transparent rounded-full animate-spin" />
+                  {videoUploadProgress > 0 ? `Yükleniyor %${videoUploadProgress}...` : 'Hazırlanıyor...'}</>
+              ) : (
+                videoUploadForm.campaignName
+                  ? '🚀 Video Yükle + Kampanya Oluştur'
+                  : '📤 Video Yükle'
+              )}
+            </button>
+
+            {uploadingVideo && videoUploadProgress > 0 && (
+              <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+                <div className="h-full bg-[#1877f2] rounded-full transition-all duration-300" style={{ width: `${videoUploadProgress}%` }} />
+              </div>
+            )}
+          </div>
+
+          {/* Right: result */}
+          <div className="bg-[#111118] rounded-xl border border-white/5 p-5 flex flex-col">
+            <h2 className="text-white font-semibold text-sm mb-4">Sonuç</h2>
+            {videoUploadResult ? (
+              <div className="space-y-3">
+                <div className="bg-[#00ff88]/5 border border-[#00ff88]/20 rounded-xl p-4 space-y-2">
+                  <p className="text-[#00ff88] text-sm font-medium">✓ {videoUploadResult.message}</p>
+                  <p className="text-[#555] text-xs font-mono">Video ID: <span className="text-[#888]">{videoUploadResult.videoId}</span></p>
+                  {videoUploadResult.campaign && (
+                    <p className="text-[#555] text-xs font-mono">Kampanya ID: <span className="text-[#888]">{videoUploadResult.campaign.external_id}</span></p>
+                  )}
+                  {videoUploadResult.adId && (
+                    <p className="text-[#00ff88] text-xs">+ Reklam oluşturuldu (ID: {videoUploadResult.adId})</p>
+                  )}
+                </div>
+                <p className="text-[#444] text-xs">Videoyu Meta Ads Manager'da görmek için Reklam Kitaplığı → Videolar bölümüne bak.</p>
+                <button onClick={() => { setVideoUploadResult(null); setSelectedVideoFile(null); setVideoUploadProgress(0); }}
+                  className="text-[#555] text-xs hover:text-[#888] transition-colors">Temizle</button>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12">
+                <div className="w-20 h-20 rounded-2xl bg-[#1877f2]/5 border border-[#1877f2]/10 flex items-center justify-center">
+                  <span className="text-4xl">📹</span>
+                </div>
+                <p className="text-[#444] text-sm">Videoyu seç ve Meta'ya gönder</p>
+                <p className="text-[#333] text-xs text-center">Video Meta reklam kitaplığına yüklenir,<br/>kampanya seçersen reklam da oluşturulur</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VIDEO PIPELINE TAB */}
+      {activeTab === 3 && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           <div className="bg-[#111118] rounded-xl border border-white/5 p-5 space-y-4">
             <h2 className="text-white font-semibold text-sm">AI Video Production Pipeline</h2>
@@ -834,7 +1042,7 @@ export default function Creative() {
       )}
 
       {/* VOICEOVER TAB */}
-      {activeTab === 3 && (
+      {activeTab === 4 && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           <div className="bg-[#111118] rounded-xl border border-white/5 p-5 space-y-4">
             <h2 className="text-white font-semibold text-sm">Seslendirme Oluştur</h2>
@@ -908,7 +1116,7 @@ export default function Creative() {
       )}
 
       {/* SCORE LIBRARY TAB */}
-      {activeTab === 4 && (
+      {activeTab === 5 && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
           {/* Creative list */}
           <div className="xl:col-span-1 bg-[#111118] rounded-xl border border-white/5 overflow-hidden">

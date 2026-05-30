@@ -296,6 +296,108 @@ router.post('/sync', authenticate, syncLimiter, async (req, res) => {
   }
 });
 
+// POST /api/campaigns/upload-video - upload video file to Meta ad library
+router.post('/upload-video', authenticate, (req, res, next) => {
+  const multer = require('multer');
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 512 * 1024 * 1024 }, // 512 MB
+    fileFilter: (_, file, cb) => {
+      if (file.mimetype.startsWith('video/')) cb(null, true);
+      else cb(new Error('Sadece video dosyaları kabul edilir'));
+    },
+  }).single('video');
+
+  upload(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+
+    const { adAccountId, pageId, campaignName, dailyBudget, objective, destinationUrl, adText } = req.body;
+    if (!adAccountId || !req.file) {
+      return res.status(400).json({ error: 'adAccountId ve video dosyası zorunludur' });
+    }
+
+    try {
+      const accountResult = await pool.query(
+        `SELECT * FROM ad_accounts WHERE id = $1 AND tenant_id = $2 AND platform = 'meta' AND is_active = true`,
+        [adAccountId, req.user.tenantId]
+      );
+      if (accountResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Meta ad account not found' });
+      }
+
+      const metaService = new MetaAdsService(accountResult.rows[0]);
+
+      // Upload video to Meta
+      const videoResult = await metaService.uploadAdVideo(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype
+      );
+
+      let campaignData = null;
+      let creativeId = null;
+      let adId = null;
+
+      // If campaign details provided, create full campaign + ad
+      if (campaignName && dailyBudget) {
+        const objectiveMap = {
+          TRAFFIC: 'OUTCOME_TRAFFIC', CONVERSIONS: 'OUTCOME_SALES',
+          BRAND_AWARENESS: 'OUTCOME_AWARENESS', ENGAGEMENT: 'OUTCOME_ENGAGEMENT',
+          LEAD_GENERATION: 'OUTCOME_LEADS', VIDEO_VIEWS: 'OUTCOME_AWARENESS',
+        };
+        const metaObjective = objectiveMap[objective || 'VIDEO_VIEWS'] || 'OUTCOME_AWARENESS';
+
+        const metaCampaign = await metaService.createCampaign({ name: campaignName, objective: metaObjective, status: 'PAUSED' });
+        const metaAdSet = await metaService.createAdSet({
+          campaignId: metaCampaign.id,
+          name: `${campaignName} - Reklam Seti`,
+          dailyBudget: parseFloat(dailyBudget),
+          targeting: { geo_locations: { countries: ['TR'] }, age_min: 18, age_max: 65 },
+        });
+
+        // Create video creative if page + link provided
+        if (pageId && destinationUrl) {
+          const creative = await metaService.createVideoAdCreative({
+            name: `${campaignName} - Video Kreatif`,
+            pageId,
+            videoId: videoResult.id,
+            linkUrl: destinationUrl,
+            message: adText || campaignName,
+            headline: campaignName,
+          });
+          creativeId = creative.id;
+
+          const ad = await metaService.createAd({ name: `${campaignName} - Reklam`, adSetId: metaAdSet.id, creativeId });
+          adId = ad.id;
+        }
+
+        const dbResult = await pool.query(
+          `INSERT INTO campaigns (tenant_id, ad_account_id, external_id, name, platform, status, objective, budget_type, budget_amount, start_date)
+           VALUES ($1, $2, $3, $4, 'meta', 'paused', $5, 'daily', $6, NOW()) RETURNING *`,
+          [req.user.tenantId, adAccountId, metaCampaign.id, campaignName, objective || 'VIDEO_VIEWS', parseFloat(dailyBudget)]
+        );
+        campaignData = dbResult.rows[0];
+      }
+
+      return res.json({
+        videoId: videoResult.id,
+        videoTitle: videoResult.title,
+        campaign: campaignData,
+        creativeId,
+        adId,
+        message: adId
+          ? 'Video + Kampanya + Reklam Meta Ads\'te oluşturuldu (duraklatılmış)'
+          : campaignData
+            ? 'Video yüklendi + Kampanya oluşturuldu'
+            : 'Video Meta reklam kitaplığına yüklendi',
+      });
+    } catch (uploadErr) {
+      console.error('[Campaigns] Video upload error:', uploadErr.message);
+      return res.status(500).json({ error: uploadErr.message || 'Video upload failed' });
+    }
+  });
+});
+
 // POST /api/campaigns/upload-image - upload image URL to Meta ad library
 router.post('/upload-image', authenticate, async (req, res) => {
   const { adAccountId, imageUrl } = req.body;
